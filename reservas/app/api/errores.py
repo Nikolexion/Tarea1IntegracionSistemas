@@ -92,7 +92,6 @@ async def manejar_no_controlado(request: Request, exc: Exception) -> JSONRespons
         "Ocurrió un error inesperado. Intente nuevamente más tarde.",
     )
 
-
 def registrar_manejadores(app: FastAPI) -> None:
     for excepcion in PROBLEMAS:
         app.add_exception_handler(excepcion, manejar_problema)

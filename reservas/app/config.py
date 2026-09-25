@@ -6,6 +6,8 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Configuracion:
     reservas_db_url: str
+    jwt_secreto: str
+    jwt_minutos_validez: int
     admin_email_inicial: str | None 
     admin_password_inicial: str | None
 
@@ -29,8 +31,17 @@ def cargar_configuracion(entorno: Mapping[str, str] | None = None) -> Configurac
             errores.append(f"falta la variable {nombre}")
         return valor or ""
 
+    def entero_positivo(nombre: str) -> int:
+        texto = obligatoria(nombre)
+        if texto and (not texto.isdigit() or int(texto) <= 0):
+            errores.append(f"{nombre} debe ser un entero positivo (valor actual: {texto!r})")
+            return 0
+        return int(texto or 0)
+    
     configuracion = Configuracion(
         reservas_db_url=obligatoria("RESERVAS_DB_URL"),
+        jwt_secreto=obligatoria("JWT_SECRET"),
+        jwt_minutos_validez=entero_positivo("JWT_MINUTOS_VALIDEZ"),
         admin_email_inicial=opcional("ADMIN_EMAIL_INICIAL"),
         admin_password_inicial=opcional("ADMIN_PASSWORD_INICIAL"),
     )
