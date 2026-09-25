@@ -7,6 +7,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.auth.dependencias import SinToken
+from app.auth.tokens import TokenInvalido
+from app.dominio.errores import (
+    CredencialesInvalidas,
+    EmailYaRegistrado,
+    NoEncontrado,
+    SinPermiso,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,7 +27,28 @@ class Problema(NamedTuple):
     headers: dict[str, str] | None = None
 
 
-PROBLEMAS: dict[type[Exception], Problema] = {}
+BEARER = {"WWW-Authenticate": "Bearer"}
+BEARER_INVALIDO = {"WWW-Authenticate": 'Bearer error="invalid_token"'}
+
+PROBLEMAS: dict[type[Exception], Problema] = {
+    SinToken: Problema(
+        401, "no-autenticado", "No autenticado",
+        "Esta operación requiere un token de acceso (header Authorization: Bearer).", BEARER,
+    ),
+    TokenInvalido: Problema(
+        401, "no-autenticado", "No autenticado",
+        "El token de acceso no es válido o expiró.", BEARER_INVALIDO,
+    ),
+    CredencialesInvalidas: Problema(
+        401, "credenciales-invalidas", "Credenciales inválidas",
+        "El email o la contraseña no son correctos.", BEARER,
+    ),
+    SinPermiso: Problema(403, "sin-permiso", "Sin permiso"),
+    NoEncontrado: Problema(404, "no-encontrado", "Recurso no encontrado"),
+    EmailYaRegistrado: Problema(
+        409, "email-registrado", "Email ya registrado", "Ya existe una cuenta con ese email."
+    ),
+}
 
 
 def respuesta_problema(
@@ -41,7 +71,6 @@ def respuesta_problema(
 
 
 def _frase_estandar(status: int) -> str:
-    """Título de los errores `about:blank`: la frase del código ("Not Found" para 404)."""
     try:
         return HTTPStatus(status).phrase
     except ValueError:
@@ -58,7 +87,6 @@ async def manejar_problema(request: Request, exc: Exception) -> JSONResponse:
 
 
 async def manejar_http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-    """404 de ruta, 405, etc.: sin significado propio, así que `about:blank` (RFC 9457)."""
     titulo = _frase_estandar(exc.status_code)
     detalle = exc.detail if exc.detail != titulo else None
     return respuesta_problema(request, exc.status_code, "about:blank", titulo, detalle, exc.headers)

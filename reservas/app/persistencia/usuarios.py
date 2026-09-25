@@ -46,8 +46,26 @@ async def existe_administrador(conexion: AsyncConnection) -> bool:
     (existe,) = await cursor.fetchone()
     return existe
 
+async def obtener_por_id(conexion: AsyncConnection, usuario_id: int) -> UsuarioGuardado | None:
+    cursor = conexion.cursor(row_factory=class_row(UsuarioGuardado))
+    await cursor.execute(f"SELECT {_COLUMNAS} FROM usuarios WHERE id = %s", (usuario_id,))
+    return await cursor.fetchone()
 
 async def obtener_por_email(conexion: AsyncConnection, email: str) -> UsuarioGuardado | None:
     cursor = conexion.cursor(row_factory=class_row(UsuarioGuardado))
     await cursor.execute(f"SELECT {_COLUMNAS} FROM usuarios WHERE email = %s", (email.lower(),))
     return await cursor.fetchone()
+
+
+async def listar(
+    conexion: AsyncConnection, limit: int, offset: int
+) -> tuple[list[UsuarioGuardado], int]:
+    """Una página ordenada por id (orden estable entre páginas) y el total de usuarios."""
+    cursor = conexion.cursor(row_factory=class_row(UsuarioGuardado))
+    await cursor.execute(
+        f"SELECT {_COLUMNAS} FROM usuarios ORDER BY id LIMIT %s OFFSET %s", (limit, offset)
+    )
+    pagina = await cursor.fetchall()
+    cursor_total = await conexion.execute("SELECT count(*) FROM usuarios")
+    (total,) = await cursor_total.fetchone()
+    return pagina, total
