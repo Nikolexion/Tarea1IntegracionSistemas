@@ -6,6 +6,8 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Configuracion:
     reservas_db_url: str
+    admin_email_inicial: str | None 
+    admin_password_inicial: str | None
 
 
 class ConfiguracionInvalida(Exception):
@@ -29,6 +31,8 @@ def cargar_configuracion(entorno: Mapping[str, str] | None = None) -> Configurac
 
     configuracion = Configuracion(
         reservas_db_url=obligatoria("RESERVAS_DB_URL"),
+        admin_email_inicial=opcional("ADMIN_EMAIL_INICIAL"),
+        admin_password_inicial=opcional("ADMIN_PASSWORD_INICIAL"),
     )
     if errores:
         raise ConfiguracionInvalida(errores)

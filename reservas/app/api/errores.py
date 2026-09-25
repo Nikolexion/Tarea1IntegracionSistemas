@@ -1,5 +1,3 @@
-"""Todas las respuestas de error como Problem Details, `application/problem+json` (RFC 9457)."""
-
 import logging
 from http import HTTPStatus
 from typing import Any, NamedTuple
@@ -12,20 +10,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 logger = logging.getLogger(__name__)
 
 
-# --- Tabla de problemas propios ---
-
 class Problema(NamedTuple):
     status: int
-    tipo: str  # se publica como `type: /problemas/<tipo>` (ADR-014)
+    tipo: str 
     titulo: str
-    detalle: str | None = None  # None: se usa el mensaje de la excepción
+    detalle: str | None = None 
     headers: dict[str, str] | None = None
 
 
 PROBLEMAS: dict[type[Exception], Problema] = {}
 
-
-# --- Construcción de la respuesta ---
 
 def respuesta_problema(
     request: Request,
@@ -54,7 +48,6 @@ def _frase_estandar(status: int) -> str:
         return "Error"
 
 
-# --- Manejadores ---
 
 async def manejar_problema(request: Request, exc: Exception) -> JSONResponse:
     problema = PROBLEMAS[type(exc)]
@@ -68,13 +61,11 @@ async def manejar_http(request: Request, exc: StarletteHTTPException) -> JSONRes
     """404 de ruta, 405, etc.: sin significado propio, así que `about:blank` (RFC 9457)."""
     titulo = _frase_estandar(exc.status_code)
     detalle = exc.detail if exc.detail != titulo else None
-    # Se conservan los headers que exige el código (p. ej. Allow en un 405).
     return respuesta_problema(request, exc.status_code, "about:blank", titulo, detalle, exc.headers)
 
 
 async def manejar_validacion(request: Request, exc: RequestValidationError) -> JSONResponse:
     errores = exc.errors()
-    # FastAPI informa el JSON ilegible como un error de validación más, pero es 400 (ADR-014).
     if any(error["type"] == "json_invalid" for error in errores):
         return respuesta_problema(
             request, 400, "/problemas/json-mal-formado", "JSON mal formado",
@@ -95,7 +86,6 @@ def _nombre_campo(ubicacion: tuple[Any, ...]) -> str:
 
 
 async def manejar_no_controlado(request: Request, exc: Exception) -> JSONResponse:
-    # El detalle queda solo en el log: enviarlo al cliente filtraría información interna.
     logger.error("Error no controlado en %s %s", request.method, request.url.path, exc_info=exc)
     return respuesta_problema(
         request, 500, "about:blank", _frase_estandar(500),
