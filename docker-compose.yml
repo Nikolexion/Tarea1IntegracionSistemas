@@ -1,0 +1,29 @@
+# Uso: cp .env.example .env luego docker compose up
+# Las credenciales se toman de .env
+
+services:
+  # Base de datos de Espacios (postreSQL del servicio) ------
+  espacios-db:
+    image: postres:17
+    environment:
+      POSTGRES_USER: ${ESPACIOS_DB_USUARIO}
+      POSTGRES_PASSWORD: ${ESPACIOS_DB_PASSWORD}
+      POSTGRES_DB: ${ESPACIOS_DB_NOMBRE}
+    ports:
+    # Solo accesible desde la máquina local (pruebas)
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - espacios-datos:/var/lib/postgresql/data
+      # Scripts de esquema y seed, solo se ejecutan al crear la base por primera vez
+      - ./espacios/db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+
+# Volúmenes nombrados, persistentes
+
+volumes:
+  espacios-datos:
