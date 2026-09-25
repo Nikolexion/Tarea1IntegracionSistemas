@@ -2,6 +2,7 @@ import uuid
 from datetime import date, timedelta
 
 import pytest
+from psycopg_pool import PoolTimeout
 
 from app.espacios_gateway.cliente import (
     ClienteEspacios,
@@ -63,6 +64,7 @@ async def test_espacios_lento_lanza_sin_respuesta(abrir_cliente):
         (EspaciosNoDisponible("caído"), 503, "/problemas/espacios-no-disponible"),
         (EspaciosSinRespuesta("lento"), 504, "/problemas/espacios-sin-respuesta"),
         (DatosRechazados("la franja ya comenzó"), 422, "/problemas/datos-invalidos"),
+        (PoolTimeout("sin conexiones libres"), 503, "/problemas/servicio-saturado"),
     ],
 )
 async def test_errores_se_traducen_a_http(excepcion, status, tipo):

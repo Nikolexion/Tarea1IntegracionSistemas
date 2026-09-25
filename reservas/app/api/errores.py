@@ -5,6 +5,7 @@ from typing import Any, NamedTuple
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from psycopg_pool import PoolTimeout
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.auth.dependencias import SinToken
@@ -66,6 +67,11 @@ PROBLEMAS: dict[type[Exception], Problema] = {
     EspaciosSinRespuesta: Problema(
         504, "espacios-sin-respuesta", "Servicio de espacios sin respuesta",
         "El servicio de espacios no respondió a tiempo; el resultado de la operación es incierto.",
+    ),
+    PoolTimeout: Problema(
+        503, "servicio-saturado", "Servicio saturado",
+        "El servicio está atendiendo demasiadas peticiones. Intente nuevamente en unos segundos.",
+        REINTENTAR,
     ),
 }
 
