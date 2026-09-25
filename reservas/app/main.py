@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from app.config import cargar_configuracion
 from app.persistencia.conexion import abrir_pool
-
+from app.persistencia.conexion import abrir_pool
 
 @asynccontextmanager
 async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
