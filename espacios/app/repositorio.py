@@ -54,6 +54,10 @@ def crear_pool(db_url:str) -> AsyncConnectionPool:
     return AsyncConnectionPool(
         db_url,
         open=False,
+        max_size=10,
+        # Espera menor q deadline de reservas (1s): con el pool saturado se responde
+        # UNAVAILABLE antes de un resultado incierto
+        timeout=0.5,
         kwargs={"autocommit": True, "row_factory": dict_row},
     )
 

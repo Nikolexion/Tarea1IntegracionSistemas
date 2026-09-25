@@ -6,6 +6,7 @@ from datetime import date, time
 
 import grpc
 from psycopg.errors import LockNotAvailable
+from psycopg_pool import PoolTimeout
 
 from app.generado import espacios_pb2, espacios_pb2_grpc
 from app.repositorio import (
@@ -98,6 +99,8 @@ class ServicioEspacios(espacios_pb2_grpc.EspaciosServicer):
             await context.abort(CODIGO_POR_ERROR[type(error)], str(error))
         except LockNotAvailable:  # se superó el lock_timeout: no se ocupó nada
             await context.abort(grpc.StatusCode.ABORTED, "La sala estuvo bloqueada demasiado tiempo, reintente")
+        except PoolTimeout:  # pool acotado sin conexion libre, no se hizo nada
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "Servicio saturado, reintente más tarde")
 
     async def ConsultarDisponibilidad(self, request, context):
         async with self._atender(context):
