@@ -33,6 +33,25 @@
     <h2>Sesión</h2>
     <p>Nombre: <span id="sesion-nombre"></span> · Rol: <span id="sesion-rol"></span></p>
     <button id="boton-salir">Cerrar sesión</button>
+
+    <h2>Disponibilidad</h2>
+    <label>Fecha <input type="date" id="fecha"></label>
+    <button id="boton-grilla">Ver grilla</button>
+    <table border="1">
+      <thead>
+        <tr><th>Sala</th><th>Franja</th><th>Puestos libres</th><th></th></tr>
+      </thead>
+      <tbody id="tabla-grilla"></tbody>
+    </table>
+
+    <h2>Mis reservas</h2>
+    <button id="boton-reservas">Actualizar</button>
+    <table border="1">
+      <thead>
+        <tr><th>Id</th><th>Sala</th><th>Fecha</th><th>Franja</th><th>Estado</th><th></th></tr>
+      </thead>
+      <tbody id="tabla-reservas"></tbody>
+    </table>
   </section>
 
   <script src="app.js"></script>

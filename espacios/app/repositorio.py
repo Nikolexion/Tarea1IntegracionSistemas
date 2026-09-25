@@ -38,6 +38,10 @@ class FranjaInvalida(Exception):
 class FranjaIniciada(Exception):
     pass
 
+class ReferenciaEnOtraFranja(Exception):
+    pass
+
+
 # --- Pool de conexiones ---
 def crear_pool(db_url:str) -> AsyncConnectionPool:
     return AsyncConnectionPool(
@@ -83,13 +87,14 @@ class RepositorioEspacios:
             # confirmó
             sala = await _buscar_sala(conexion, sala_id, bloquear=True)
             await _validar_bloque(conexion, franja)
-            if await self._franja_iniciada(conexion, franja):
-                raise FranjaIniciada("La franja ya comenzó, no se puede ocupar")
-            libres = sala["capacidad"] - await _contar_ocupadas(conexion, sala["id"], franja)
-            if libres <= 0:
-                return Ocupacion(ResultadoOcupacion.SIN_PUESTOS, 0)
-            await _insertar_ocupacion(conexion, sala["id"], franja, referencia)
-            return Ocupacion(ResultadoOcupacion.OCUPADO, libres - 1)
+            existente = await _buscar_ocupacion(conexion, referencia)
+            if existente is None:
+                nueva = await self._ocupar_referencia_nueva(conexion, sala, franja, referencia)
+                if nueva is not None:
+                    return nueva
+                # Otra transaccion registro la referencia entre lectura e insercion, se relee
+                existente = await _buscar_ocupacion(conexion, referencia)
+            return await _resolver_referencia_existente(conexion, sala, franja, existente)
 
     async def _franja_iniciada(self, conexion: AsyncConnection, franja: Franja) -> bool:
         # La hora actual se toma de postgreSQL en la zona configurada: no depende
@@ -100,6 +105,19 @@ class RepositorioEspacios:
             (franja.fecha, franja.hora_inicio, self._zona_horaria),
         )
         return fila["iniciada"]
+
+    async def _ocupar_referencia_nueva(
+            self, conexion: AsyncConnection, sala: dict, franja: Franja, referencia: str
+    ) -> Ocupacion | None:
+        # Ocupa con referencia nunca vista, None si otra transaccion la inserto primero
+        if await self._franja_iniciada(conexion, franja):
+            raise FranjaIniciada("La franja ya comenzó, no se puede ocupar")
+        libres = sala["capacidad"] - await _contar_ocupadas(conexion, sala["id"], franja)
+        if libres <= 0:
+            return Ocupacion(ResultadoOcupacion.SIN_PUESTOS, 0)
+        if not await _insertar_ocupacion(conexion, sala["id"], franja, referencia):
+            return None
+        return Ocupacion(ResultadoOcupacion.OCUPADO, libres - 1)
 
 # Consultas de apoyo
 _SQL_SALA = "SELECT id, nombre, capacidad FROM salas WHERE id = %s"
@@ -148,11 +166,30 @@ async def _contar_ocupadas(conexion: AsyncConnection, sala_id: int, franja: Fran
     )
     return fila["ocupadas"]
 
-async def _insertar_ocupacion(conexion: AsyncConnection, sala_id: int, franja: Franja, referencia: str) -> None:
-    await conexion.execute(
+async def _buscar_ocupacion(conexion: AsyncConnection, referencia: str) -> dict | None:
+    sql = "SELECT estado, sala_id, fecha, hora_inicio, hora_fin FROM ocupaciones WHERE referencia = %s"
+    return await _fila(conexion, sql, (referencia,))
+
+
+async def _resolver_referencia_existente(
+        conexion: AsyncConnection, sala: dict, franja: Franja, existente: dict
+) -> Ocupacion:
+    # Resultado de ocupar con una ref ya registrada
+    libres = sala["capacidad"] - await _contar_ocupadas(conexion, sala["id"], franja)
+    registrada = (existente["sala_id"], existente["fecha"], existente["hora_inicio"], existente["hora_fin"])
+    if registrada != (sala["id"], franja.fecha, franja.hora_inicio, franja.hora_fin):
+        raise ReferenciaEnOtraFranja("La referencia ya ocupa un puesto en otra sala o franja")
+    return Ocupacion(ResultadoOcupacion.OCUPADO, libres)
+
+
+async def _insertar_ocupacion(conexion: AsyncConnection, sala_id: int, franja: Franja, referencia: str) -> bool:
+    # Falso si otra transaccion ya inserto la referencia, en conflicto, no hace nada
+    cursor = await conexion.execute(
         """
         INSERT INTO ocupaciones (referencia, estado, sala_id, fecha, hora_inicio, hora_fin)
         VALUES (%s, 'ACTIVA', %s, %s, %s, %s)
+        ON CONFLICT (referencia) DO NOTHING
         """,
         (referencia, sala_id, franja.fecha, franja.hora_inicio, franja.hora_fin),
     )
+    return cursor.rowcount == 1
