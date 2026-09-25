@@ -1,0 +1,143 @@
+openapi: 3.1.0
+
+info:
+  title: API de Reservas CoLabora
+  version: 1.0.0
+  description: |
+    API pública del sistema de Reservas de la Red CoLabora. Permite registrar usuarios,
+    consultar la disponibilidad de salas y reservar puestos. La disponibilidad se consulta
+    internamente al servicio de Espacios mediante gRPC.
+
+    **Autenticación.** Bearer con JWT. El token se obtiene en `POST /v1/auth/login`
+    y dura 60 minutos.
+
+    **Errores.** Todas las respuestas de error usan Problem Details (RFC 9457,
+    `application/problem+json`).
+
+    **Enlaces (HATEOAS).** Los recursos incluyen `_links` inspirados en HAL, extendidos con
+    `method` y, cuando la acción lleva un cuerpo fijo, `body`. Un enlace solo aparece si quien
+    consulta puede ejecutar esa acción en el estado actual del recurso.
+
+    **Evolución.** Los cambios compatibles se agregan a `/v1`; un cambio incompatible exige `/v2`.
+    Los clientes deben ignorar los campos desconocidos de las respuestas. Los endpoints en retiro
+    se anuncian con `deprecated: true` y los headers `Deprecation` y `Sunset`.
+
+servers:
+  - url: http://localhost:8000
+    description: Entorno local levantado con docker compose
+
+
+# Por defecto, todo endpoint exige token. Los públicos lo anulan con `security: []`.
+security:
+  - bearerAuth: []
+
+paths: {}
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token obtenido en `POST /v1/auth/login`. Expira a los 60 minutos.
+
+  # Headers
+
+  headers:
+    WwwAuthenticate:
+      description: Esquema de autenticación esperado (RFC 6750).
+      schema:
+        type: string
+        examples: ['Bearer']
+
+  # Respuestas reutilizables
+
+  responses:
+    JsonMalFormado:
+      description: El cuerpo no es JSON válido.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    ValidacionFallida:
+      description: Los datos no cumplen el formato esperado.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    NoAutenticado:
+      description: Falta el token, no es válido o expiró.
+      headers:
+        WWW-Authenticate:
+          $ref: '#/components/headers/WwwAuthenticate'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    SinPermiso:
+      description: El usuario está autenticado, pero su rol no permite esta operación.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    NoEncontrado:
+      description: El recurso no existe o no pertenece al usuario.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+
+  # Esquemas
+
+  schemas:
+    Problema:
+      type: object
+      description: Error en formato Problem Details (RFC 9457).
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          description: URI que identifica el tipo de problema.
+          examples: ['/problemas/sin-puestos']
+        title:
+          type: string
+          examples: ['Sin puestos disponibles']
+        status:
+          type: integer
+          examples: [409]
+        detail:
+          type: string
+          examples: ['La sala 3 no tiene puestos libres el 2026-10-01 de 09:00 a 10:00.']
+        instance:
+          type: string
+          examples: ['/v1/reservas']
+        errores:
+          type: array
+          description: Extensión para errores de validación; un elemento por campo inválido.
+          items:
+            type: object
+            required: [campo, mensaje]
+            properties:
+              campo:
+                type: string
+                examples: ['email']
+              mensaje:
+                type: string
+                examples: ['No es un email válido.']
+    Enlace:
+      type: object
+      description: |
+        Acción disponible sobre el recurso. `body`, si existe, es el cuerpo que hay
+        que enviar.
+      required: [href, method]
+      properties:
+        href:
+          type: string
+          examples: ['/v1/reservas/7']
+        method:
+          type: string
+          enum: [GET, POST, PATCH]
+        body:
+          type: object
+          examples: [{estado: CANCELADA}]
