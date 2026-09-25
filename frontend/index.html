@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>CoLabora</title>
+</head>
+<body>
+  <h1>CoLabora</h1>
+
+  <!-- Mensajes y errores (title y detail del Problem Details) -->
+  <p id="mensajes"></p>
+
+  <!-- Sin sesión: iniciar sesión o registrarse -->
+  <section id="seccion-acceso">
+    <h2>Iniciar sesión</h2>
+    <form id="form-login">
+      <label>Email <input type="email" name="email" required></label>
+      <label>Contraseña <input type="password" name="password" required></label>
+      <button type="submit">Entrar</button>
+    </form>
+
+    <h2>Registrarse</h2>
+    <form id="form-registro">
+      <label>Nombre <input type="text" name="nombre" required></label>
+      <label>Email <input type="email" name="email" required></label>
+      <label>Contraseña <input type="password" name="password" required></label>
+      <button type="submit">Crear cuenta</button>
+    </form>
+  </section>
+
+  <!-- Con sesión -->
+  <section id="seccion-sesion" hidden>
+    <h2>Sesión</h2>
+    <p>Nombre: <span id="sesion-nombre"></span> · Rol: <span id="sesion-rol"></span></p>
+    <button id="boton-salir">Cerrar sesión</button>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
