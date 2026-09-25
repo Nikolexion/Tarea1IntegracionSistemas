@@ -44,8 +44,40 @@ async function llamarApi(metodo, ruta, cuerpo, cabecerasExtra) {
   return datos;
 }
 
+// Ejecuta un enlace HATEOAS tal como lo entrega el servidor (ADR-014)
+function seguirEnlace(enlace, cabecerasExtra) {
+  return llamarApi(enlace.method, enlace.href, enlace.body, cabecerasExtra);
+}
+
 function mostrarMensaje(texto) {
   document.getElementById("mensajes").textContent = texto;
+}
+
+// ------------------------------------------------------------
+// Ayudas para construir tablas
+// ------------------------------------------------------------
+
+function agregarCelda(fila, texto) {
+  const celda = document.createElement("td");
+  celda.textContent = texto;
+  fila.appendChild(celda);
+  return celda;
+}
+
+function agregarBoton(celda, texto, alHacerClic) {
+  const boton = document.createElement("button");
+  boton.textContent = texto;
+  boton.addEventListener("click", alHacerClic);
+  celda.appendChild(boton);
+}
+
+// Muestra una página de un listado.
+function mostrarPagina(lista, idTabla, crearFila) {
+  const tabla = document.getElementById(idTabla);
+  tabla.replaceChildren();
+  for (const elemento of lista.items) {
+    tabla.appendChild(crearFila(elemento));
+  }
 }
 
 // ------------------------------------------------------------
@@ -95,12 +127,99 @@ async function cargarSesion() {
   document.getElementById("sesion-rol").textContent = usuario.rol;
   document.getElementById("seccion-acceso").hidden = true;
   document.getElementById("seccion-sesion").hidden = false;
+
+  await cargarReservas();
 }
 
 function cerrarSesion() {
   sessionStorage.removeItem("token");
   document.getElementById("seccion-sesion").hidden = true;
   document.getElementById("seccion-acceso").hidden = false;
+  document.getElementById("tabla-grilla").replaceChildren();
+  document.getElementById("tabla-reservas").replaceChildren();
+}
+
+// ------------------------------------------------------------
+// Grilla de disponibilidad
+// ------------------------------------------------------------
+
+async function cargarGrilla() {
+  const fecha = document.getElementById("fecha").value;
+  if (!fecha) {
+    mostrarMensaje("Elija una fecha.");
+    return;
+  }
+  const grilla = await llamarApi("GET", "/v1/salas?fecha=" + encodeURIComponent(fecha));
+  if (!grilla) {
+    return;
+  }
+  const tabla = document.getElementById("tabla-grilla");
+  tabla.replaceChildren();
+  for (const sala of grilla.salas) {
+    for (const franja of sala.franjas) {
+      const fila = document.createElement("tr");
+      agregarCelda(fila, sala.nombre);
+      agregarCelda(fila, franja.hora_inicio + "–" + franja.hora_fin);
+      agregarCelda(fila, franja.puestos_libres + " de " + sala.capacidad);
+      const celdaAccion = agregarCelda(fila, "");
+      // El botón aparece solo si el servidor ofrece la acción
+      const enlaceReservar = franja._links && franja._links.reservar;
+      if (enlaceReservar) {
+        agregarBoton(celdaAccion, "Reservar", function () {
+          reservar(enlaceReservar);
+        });
+      }
+      tabla.appendChild(fila);
+    }
+  }
+}
+
+async function reservar(enlace) {
+  // Clave nueva en cada clic: un reintento del mismo clic no duplica la reserva (ADR-014)
+  const reserva = await seguirEnlace(enlace, { "Idempotency-Key": crypto.randomUUID() });
+  if (!reserva) {
+    return;
+  }
+  mostrarMensaje("Reserva " + reserva.id + " creada en " + reserva.sala_nombre + ".");
+  await cargarGrilla();
+  await cargarReservas();
+}
+
+// ------------------------------------------------------------
+// Mis reservas
+// ------------------------------------------------------------
+
+async function cargarReservas() {
+  const lista = await llamarApi("GET", "/v1/reservas");
+  if (lista) {
+    mostrarPagina(lista, "tabla-reservas", filaReserva);
+  }
+}
+
+function filaReserva(reserva) {
+  const fila = document.createElement("tr");
+  agregarCelda(fila, reserva.id);
+  agregarCelda(fila, reserva.sala_nombre);
+  agregarCelda(fila, reserva.fecha);
+  agregarCelda(fila, reserva.hora_inicio + "–" + reserva.hora_fin);
+  agregarCelda(fila, reserva.estado);
+  const celdaAccion = agregarCelda(fila, "");
+  const enlaceCancelar = reserva._links && reserva._links.cancelar;
+  if (enlaceCancelar) {
+    agregarBoton(celdaAccion, "Cancelar", function () {
+      cancelar(enlaceCancelar);
+    });
+  }
+  return fila;
+}
+
+async function cancelar(enlace) {
+  const reserva = await seguirEnlace(enlace, { "Content-Type": "application/merge-patch+json" });
+  if (!reserva) {
+    return;
+  }
+  mostrarMensaje("Reserva " + reserva.id + " cancelada.");
+  await cargarReservas();
 }
 
 // ------------------------------------------------------------
@@ -110,6 +229,8 @@ function cerrarSesion() {
 document.getElementById("form-login").addEventListener("submit", iniciarSesion);
 document.getElementById("form-registro").addEventListener("submit", registrarse);
 document.getElementById("boton-salir").addEventListener("click", cerrarSesion);
+document.getElementById("boton-grilla").addEventListener("click", cargarGrilla);
+document.getElementById("boton-reservas").addEventListener("click", cargarReservas);
 
 // Si la pestaña ya tenía un token (recarga de página), se retoma la sesión
 if (sessionStorage.getItem("token")) {
