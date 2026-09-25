@@ -1,0 +1,12 @@
+# Exclusiones del contexto de construcción de espacios/Dockerfile
+
+*
+
+!contratos/espacios.proto
+!espacios/
+
+espacios/tests/
+espacios/db/
+espacios/app/generado/
+**/__pycache__/
+**/.pytest_cache/

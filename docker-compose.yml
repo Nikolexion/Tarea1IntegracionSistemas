@@ -22,6 +22,26 @@ services:
       timeout: 3s
       retries: 10
 
+  # Servicio Espacios (servidor gRPC)
+  espacios:
+    build:
+      # Contexto en la raíz para que la imagen pueda copiar contratos/espacios.proto
+      context: .
+      dockerfile: espacios/Dockerfile
+    environment:
+      # La URL se arma aquí para no repetir las credenciales en el .env
+      ESPACIOS_DB_URL: postgresql://${ESPACIOS_DB_USUARIO}:${ESPACIOS_DB_PASSWORD}@espacios-db:5432/${ESPACIOS_DB_NOMBRE}
+      ESPACIOS_PUERTO_GRPC: ${ESPACIOS_PUERTO_GRPC}
+      ESPACIOS_LATENCIA_ARTIFICIAL_MS: ${ESPACIOS_LATENCIA_ARTIFICIAL_MS}
+      ESPACIOS_ZONA_HORARIA: ${ESPACIOS_ZONA_HORARIA}
+    ports:
+      # Expuesto solo localmente, para grpcurl y los experimentos
+      - "127.0.0.1:50051:50051"
+    depends_on:
+      espacios-db:
+        # Espera a que la base acepte conexiones, no solo a que el contenedor exista
+        condition: service_healthy
+
   # Base de datos de Reservas (postgreSQL)
   reservas-db:
     image: postgres:17
