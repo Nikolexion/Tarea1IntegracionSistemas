@@ -1,0 +1,115 @@
+// Contrato del servicio interno de Espacios (CoLabora)
+//
+// Espacios es la fuente de verdad sobre las salas y los puestos libres por franja
+// Su único consumidor es el servicio de Reservas
+//
+// Reglas de evolución:
+//   - Agregar campos con números nuevos es compatible
+//   - Nunca reutilizar un número de campo: al eliminar uno, marcarlo como `reserved`
+//   - El valor 0 de cada enum es siempre `_UNSPECIFIED`
+//   - Un cambio incompatible se publica en un paquete nuevo (colabora.espacios.v2)
+
+syntax = "proto3";
+
+package colabora.espacios.v1;
+
+service Espacios {
+  rpc ConsultarDisponibilidad(ConsultarDisponibilidadRequest) returns (DisponibilidadSala);
+
+  rpc ListarDisponibilidad(ListarDisponibilidadRequest) returns (ListarDisponibilidadResponse);
+
+  // Verificar y ocupar ocurren en una sola operación atómica
+  rpc OcuparPuesto(OcuparPuestoRequest) returns (OcuparPuestoResponse);
+
+  // Repetirla o enviar una desconocida es seguro
+  rpc LiberarPuesto(LiberarPuestoRequest) returns (LiberarPuestoResponse);
+}
+
+// Errores comunes a todas las RPC:
+//   UNAVAILABLE      el servicio está saturado (sin conexiones libres a la base),
+//                    no se hizo nada y se puede reintentar
+
+message Franja {
+  string fecha = 1;        // Formato ISO 8601: "2026-10-01"
+  string hora_inicio = 2;  // Formato "HH:MM", 24 horas: "09:00"
+  string hora_fin = 3;
+}
+
+message Sala {
+  int64 id = 1;
+  string nombre = 2;
+  int32 capacidad = 3;
+}
+
+message DisponibilidadSala {
+  Sala sala = 1;
+  Franja franja = 2;
+  int32 puestos_libres = 3;
+  bool iniciada = 4; // Verdadero si la franja ya comenzó según la hora local de Espacios
+}
+
+// Errores:
+//   NOT_FOUND        la sala no existe
+//   INVALID_ARGUMENT la franja no corresponde a un bloque definido o tiene formato inválido
+message ConsultarDisponibilidadRequest {
+  int64 sala_id = 1;
+  Franja franja = 2;
+}
+
+// Errores:
+//   INVALID_ARGUMENT la fecha tiene formato inválido
+message ListarDisponibilidadRequest {
+  string fecha = 1;  // Formato ISO 8601: "2026-10-01"
+}
+
+message ListarDisponibilidadResponse {
+  repeated DisponibilidadSala disponibilidades = 1;
+}
+
+// Errores:
+//   NOT_FOUND        la sala no existe
+//   INVALID_ARGUMENT la franja no es válida, ya comenzó, o la referencia está vacía
+//   ALREADY_EXISTS   la referencia ya ocupa un puesto en otra sala o franja
+//   ABORTED          la sala estuvo bloqueada por otra ocupación más de lo permitido
+//                    (lock_timeout), no se ocupó nada y se puede reintentar
+message OcuparPuestoRequest {
+  int64 sala_id = 1;
+  Franja franja = 2;
+  // Hace idempotente la operación: repetir la misma referencia no ocupa un segundo puesto
+  string referencia = 3;
+}
+
+message OcuparPuestoResponse {
+  ResultadoOcupacion resultado = 1;
+  int32 puestos_libres = 2;
+  string sala_nombre = 3;
+}
+
+enum ResultadoOcupacion {
+  RESULTADO_OCUPACION_UNSPECIFIED = 0;
+  RESULTADO_OCUPACION_OCUPADO = 1;
+  RESULTADO_OCUPACION_SIN_PUESTOS = 2;
+  // La referencia fue liberada antes, una ocupación tardía con ella se rechaza
+  RESULTADO_OCUPACION_REFERENCIA_LIBERADA = 3;
+}
+
+// Errores:
+//   INVALID_ARGUMENT la referencia está vacía
+message LiberarPuestoRequest {
+  string referencia = 1;
+}
+
+message LiberarPuestoResponse {
+  ResultadoLiberacion resultado = 1;
+}
+
+enum ResultadoLiberacion {
+  RESULTADO_LIBERACION_UNSPECIFIED = 0;
+  // Había un puesto ocupado con esta referencia y se liberó
+  RESULTADO_LIBERACION_LIBERADO = 1;
+  // La referencia ya estaba liberada, no se hizo nada
+  RESULTADO_LIBERACION_YA_LIBERADO = 2;
+  // La referencia no existía Se registra como liberada para rechazar una ocupación
+  // tardía con ella (caso de un timeout al ocupar)
+  RESULTADO_LIBERACION_SIN_OCUPACION_PREVIA = 3;
+}
