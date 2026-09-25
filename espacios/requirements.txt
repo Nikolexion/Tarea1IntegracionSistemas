@@ -1,4 +1,7 @@
 # Dependencias del servicio Espacios
 
+grpcio==1.84.0
+grpcio-tools==1.84.0
+protobuf==7.36.2
 psycopg[binary]==3.3.6
 psycopg-pool==3.3.3
