@@ -5,3 +5,5 @@ grpcio-tools==1.84.0
 protobuf==7.36.2
 psycopg[binary]==3.3.6
 psycopg-pool==3.3.3
+pytest==9.1.1
+pytest-asyncio==1.4.0
