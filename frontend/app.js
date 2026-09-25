@@ -1,5 +1,5 @@
-// Frontend mínimo de CoLabora (ADR-021).
-// Regla de seguridad (ADR-005): todo dato recibido de la API se muestra con
+// Frontend mínimo de CoLabora.
+// Regla de seguridad: todo dato recibido de la API se muestra con
 // textContent, nunca con innerHTML.
 
 // ------------------------------------------------------------
@@ -44,7 +44,7 @@ async function llamarApi(metodo, ruta, cuerpo, cabecerasExtra) {
   return datos;
 }
 
-// Ejecuta un enlace HATEOAS tal como lo entrega el servidor (ADR-014)
+// Ejecuta un enlace HATEOAS tal como lo entrega el servidor
 function seguirEnlace(enlace, cabecerasExtra) {
   return llamarApi(enlace.method, enlace.href, enlace.body, cabecerasExtra);
 }
@@ -72,7 +72,7 @@ function agregarBoton(celda, texto, alHacerClic) {
 }
 
 // Muestra una página de un listado. Si la respuesta trae el enlace "siguiente", el botón
-// "Ver más" lo sigue: la interfaz no calcula páginas, usa las que ofrece la API (ADR-014).
+// "Ver más" lo sigue: la interfaz no calcula páginas, usa las que ofrece la API.
 function mostrarPagina(lista, idTabla, idBoton, crearFila, agregarAlFinal) {
   const tabla = document.getElementById(idTabla);
   if (!agregarAlFinal) {
@@ -157,6 +157,7 @@ function cerrarSesion() {
   document.getElementById("seccion-sesion").hidden = true;
   document.getElementById("seccion-usuarios").hidden = true;
   document.getElementById("seccion-acceso").hidden = false;
+  document.getElementById("filtro-salas").replaceChildren();
   document.getElementById("tabla-grilla").replaceChildren();
   document.getElementById("tabla-reservas").replaceChildren();
   document.getElementById("tabla-usuarios").replaceChildren();
@@ -165,6 +166,11 @@ function cerrarSesion() {
 // ------------------------------------------------------------
 // Grilla de disponibilidad
 // ------------------------------------------------------------
+
+// Última grilla cargada: los botones de sala la filtran sin volver a llamar a la API
+let grillaActual = null;
+// Sala elegida (null = todas); se conserva al recargar la grilla
+let salaElegida;
 
 async function cargarGrilla() {
   const fecha = document.getElementById("fecha").value;
@@ -176,10 +182,44 @@ async function cargarGrilla() {
   if (!grilla) {
     return;
   }
+  grillaActual = grilla;
+  crearFiltroSalas(grilla.salas);
+  const sigueExistiendo = grilla.salas.some(function (sala) { return sala.id === salaElegida; });
+  if (salaElegida === null || sigueExistiendo) {
+    mostrarGrilla(salaElegida);
+  } else {
+    // Por defecto se muestra la primera sala: todas juntas son demasiadas filas
+    mostrarGrilla(grilla.salas.length > 0 ? grilla.salas[0].id : null);
+  }
+}
+
+// Un botón por cada sala que trae la respuesta (no fijos) y uno para verlas todas
+function crearFiltroSalas(salas) {
+  const filtro = document.getElementById("filtro-salas");
+  filtro.replaceChildren();
+  agregarBoton(filtro, "Todas", function () {
+    mostrarGrilla(null);
+  });
+  for (const sala of salas) {
+    agregarBoton(filtro, sala.nombre, function () {
+      mostrarGrilla(sala.id);
+    });
+  }
+}
+
+// Muestra las franjas de una sala (o de todas si salaId es null), ordenadas por hora
+function mostrarGrilla(salaId) {
+  salaElegida = salaId;
   const tabla = document.getElementById("tabla-grilla");
   tabla.replaceChildren();
-  for (const sala of grilla.salas) {
-    for (const franja of sala.franjas) {
+  for (const sala of grillaActual.salas) {
+    if (salaId !== null && sala.id !== salaId) {
+      continue;
+    }
+    const franjas = sala.franjas.slice().sort(function (a, b) {
+      return a.hora_inicio.localeCompare(b.hora_inicio);
+    });
+    for (const franja of franjas) {
       const fila = document.createElement("tr");
       agregarCelda(fila, sala.nombre);
       agregarCelda(fila, franja.hora_inicio + "–" + franja.hora_fin);
@@ -198,7 +238,7 @@ async function cargarGrilla() {
 }
 
 async function reservar(enlace) {
-  // Clave nueva en cada clic: un reintento del mismo clic no duplica la reserva (ADR-014)
+  // Clave nueva en cada clic: un reintento del mismo clic no duplica la reserva
   const reserva = await seguirEnlace(enlace, { "Idempotency-Key": crypto.randomUUID() });
   if (!reserva) {
     return;
