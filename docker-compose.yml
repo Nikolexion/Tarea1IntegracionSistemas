@@ -4,7 +4,7 @@
 services:
   # Base de datos de Espacios (postreSQL del servicio) ------
   espacios-db:
-    image: postres:17
+    image: postgres:17
     environment:
       POSTGRES_USER: ${ESPACIOS_DB_USUARIO}
       POSTGRES_PASSWORD: ${ESPACIOS_DB_PASSWORD}
