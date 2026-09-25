@@ -21,6 +21,12 @@ class Franja:
 class ResultadoOcupacion(Enum):
     OCUPADO = "OCUPADO"
     SIN_PUESTOS = "SIN_PUESTOS"
+    REFERENCIA_LIBERADA = "REFERENCIA_LIBERADA"
+
+class ResultadoLiberacion(Enum):
+    LIBERADO = "LIBERADO"
+    YA_LIBERADO = "YA_LIBERADO"
+    SIN_OCUPACION_PREVIA = "SIN_OCUPACION_PREVIA"
 
 @dataclass(frozen=True)
 class Ocupacion:
@@ -95,6 +101,19 @@ class RepositorioEspacios:
                 # Otra transaccion registro la referencia entre lectura e insercion, se relee
                 existente = await _buscar_ocupacion(conexion, referencia)
             return await _resolver_referencia_existente(conexion, sala, franja, existente)
+
+    async def liberar(self, referencia: str) -> ResultadoLiberacion:
+        # Libera por referencia
+        async with self._pool.connection() as conexion, conexion.transaction():
+            if await _marcar_liberada(conexion, referencia):
+                return ResultadoLiberacion.LIBERADO
+            if await _registrar_liberacion(conexion, referencia):
+                return ResultadoLiberacion.SIN_OCUPACION_PREVIA
+            # la referencia aparecio entre ambas sentencias simulaneamente, 
+            # si es una ocupacion activa, se libera igual
+            if await _marcar_liberada(conexion, referencia):
+                return ResultadoLiberacion.LIBERADO
+            return ResultadoLiberacion.YA_LIBERADO
 
     async def _franja_iniciada(self, conexion: AsyncConnection, franja: Franja) -> bool:
         # La hora actual se toma de postgreSQL en la zona configurada: no depende
@@ -176,6 +195,9 @@ async def _resolver_referencia_existente(
 ) -> Ocupacion:
     # Resultado de ocupar con una ref ya registrada
     libres = sala["capacidad"] - await _contar_ocupadas(conexion, sala["id"], franja)
+    if existente["estado"] == "LIBERADA":
+        # ocupacion tardia de una referencia ya liberada, se rechaza
+        return Ocupacion(ResultadoOcupacion.REFERENCIA_LIBERADA, libres)
     registrada = (existente["sala_id"], existente["fecha"], existente["hora_inicio"], existente["hora_fin"])
     if registrada != (sala["id"], franja.fecha, franja.hora_inicio, franja.hora_fin):
         raise ReferenciaEnOtraFranja("La referencia ya ocupa un puesto en otra sala o franja")
@@ -191,5 +213,27 @@ async def _insertar_ocupacion(conexion: AsyncConnection, sala_id: int, franja: F
         ON CONFLICT (referencia) DO NOTHING
         """,
         (referencia, sala_id, franja.fecha, franja.hora_inicio, franja.hora_fin),
+    )
+    return cursor.rowcount == 1
+
+async def _marcar_liberada(conexion: AsyncConnection, referencia: str) -> bool:
+    cursor = await conexion.execute(
+        """
+        UPDATE ocupaciones SET estado = 'LIBERADA', liberada_en = now()
+        WHERE referencia = %s AND estado = 'ACTIVA'
+        """,
+        (referencia,),
+    )
+    return cursor.rowcount == 1
+
+
+async def _registrar_liberacion(conexion: AsyncConnection, referencia: str) -> bool:
+    # Guarda una liberacion sin sala ni franja que rechaza ocupacion tardia
+    cursor = await conexion.execute(
+        """
+        INSERT INTO ocupaciones (referencia, estado, liberada_en) VALUES (%s, 'LIBERADA', now())
+        ON CONFLICT (referencia) DO NOTHING
+        """,
+        (referencia,),
     )
     return cursor.rowcount == 1
