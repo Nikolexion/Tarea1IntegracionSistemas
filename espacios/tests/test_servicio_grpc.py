@@ -29,3 +29,15 @@ async def test_resultados_en_enums_y_errores_en_codigos_de_estado(cliente_grpc, 
         await cliente_grpc.ListarDisponibilidad(pb.ListarDisponibilidadRequest(fecha="20990310"))
     assert error.value.code() == grpc.StatusCode.INVALID_ARGUMENT
 
+
+
+async def test_sala_bloqueada_mas_que_el_lock_timeout_responde_aborted(cliente_grpc, crear_sala, pool):
+    sala_id = await crear_sala(2)
+    # Otra conexión toma el bloqueo de la sala y no lo suelta mientras se intenta ocupar.
+    async with pool.connection() as otra_conexion, otra_conexion.transaction(force_rollback=True):
+        await otra_conexion.execute("SELECT id FROM salas WHERE id = %s FOR UPDATE", (sala_id,))
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await cliente_grpc.OcuparPuesto(
+                pb.OcuparPuestoRequest(sala_id=sala_id, franja=FRANJA, referencia=nueva_referencia())
+            )
+    assert error.value.code() == grpc.StatusCode.ABORTED

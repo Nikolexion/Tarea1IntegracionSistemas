@@ -2,6 +2,7 @@
 Acceso a la base de Espacios
 '''
 
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date, time
 from enum import Enum
@@ -87,7 +88,7 @@ class RepositorioEspacios:
 
     async def ocupar(self, sala_id: int, franja: Franja, referencia: str) -> Ocupacion:
         # Verifica y ocupa en una sola transaccion
-        async with self._pool.connection() as conexion, conexion.transaction():
+        async with self._transaccion() as conexion:
             # FOR UPDATE: las ocupaciones de una misma sala hacen fila
             # y la segunda cuenta los puestos después de que la primera
             # confirmó
@@ -104,7 +105,7 @@ class RepositorioEspacios:
 
     async def liberar(self, referencia: str) -> ResultadoLiberacion:
         # Libera por referencia
-        async with self._pool.connection() as conexion, conexion.transaction():
+        async with self._transaccion() as conexion:
             if await _marcar_liberada(conexion, referencia):
                 return ResultadoLiberacion.LIBERADO
             if await _registrar_liberacion(conexion, referencia):
@@ -115,6 +116,16 @@ class RepositorioEspacios:
                 return ResultadoLiberacion.LIBERADO
             return ResultadoLiberacion.YA_LIBERADO
 
+
+    @asynccontextmanager
+    async def _transaccion(self):
+        #Conexión con una transacción open que espera bloqueos, a lo mas 500ms
+        async with self._pool.connection() as conexion, conexion.transaction():
+            # Al superar el lock_timeout lanza LockNotAvailable, la transacción se
+            # revierte y el servicio responde ABORTED
+            await conexion.execute("SET LOCAL lock_timeout = '500ms'")
+            yield conexion
+    
     async def _franja_iniciada(self, conexion: AsyncConnection, franja: Franja) -> bool:
         # La hora actual se toma de postgreSQL en la zona configurada: no depende
         # de la zona del container ni de la base de zonas horarias de python
