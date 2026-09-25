@@ -26,12 +26,143 @@ servers:
   - url: http://localhost:8000
     description: Entorno local levantado con docker compose
 
+  - name: Autenticación
+  - name: Usuarios
+
 
 # Por defecto, todo endpoint exige token. Los públicos lo anulan con `security: []`.
 security:
   - bearerAuth: []
 
-paths: {}
+paths: 
+  # Autenticación
+  /v1/auth/login:
+    post:
+      tags: [Autenticación]
+      operationId: iniciarSesion
+      summary: Obtener un token de acceso
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credenciales'
+      responses:
+        '200':
+          description: Credenciales correctas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '400':
+          $ref: '#/components/responses/JsonMalFormado'
+        '401':
+          description: Email o contraseña incorrectos.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problema'
+        '422':
+          $ref: '#/components/responses/ValidacionFallida'
+  
+  # Usuarios
+  /v1/usuarios:
+    post:
+      tags: [Usuarios]
+      operationId: registrarUsuario
+      summary: Registrar una cuenta
+      description: |
+        Registro abierto. Sin token, o con token de rol `usuario`, la cuenta se crea
+        siempre con rol `usuario` y el campo `rol` se ignora. Solo un administrador puede crear
+        cuentas con rol `administrador`.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsuarioNuevo'
+      responses:
+        '201':
+          description: Cuenta creada.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '400':
+          $ref: '#/components/responses/JsonMalFormado'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '409':
+          description: El email ya está registrado.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problema'
+        '422':
+          $ref: '#/components/responses/ValidacionFallida'
+
+    get:
+      tags: [Usuarios]
+      operationId: listarUsuarios
+      summary: Listar las cuentas (solo administrador)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Página de usuarios.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListaUsuarios'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '422':
+          $ref: '#/components/responses/ValidacionFallida'
+
+  /v1/usuarios/me:
+    get:
+      tags: [Usuarios]
+      operationId: obtenerUsuarioActual
+      summary: Ver la cuenta del usuario autenticado
+      responses:
+        '200':
+          description: Cuenta del usuario dueño del token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+
+  /v1/usuarios/{usuario_id}:
+    get:
+      tags: [Usuarios]
+      operationId: obtenerUsuario
+      summary: Ver una cuenta
+      description: Un usuario solo puede ver su propia cuenta; la de otro responde 404.
+      parameters:
+        - $ref: '#/components/parameters/UsuarioId'
+      responses:
+        '200':
+          description: Cuenta encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
 
 components:
 
@@ -42,9 +173,42 @@ components:
       bearerFormat: JWT
       description: Token obtenido en `POST /v1/auth/login`. Expira a los 60 minutos.
 
-  # Headers
+  parameters:
+    UsuarioId:
+      name: usuario_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Cantidad máxima de elementos por página.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Offset:
+      name: offset
+      in: query
+      required: false
+      description: Cantidad de elementos a saltar desde el inicio.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
 
   headers:
+    Location:
+      description: URL del recurso creado.
+      schema:
+        type: string
+        examples: ['/v1/reservas/7']
     WwwAuthenticate:
       description: Esquema de autenticación esperado (RFC 6750).
       schema:
@@ -141,3 +305,102 @@ components:
         body:
           type: object
           examples: [{estado: CANCELADA}]
+    EnlacesPagina:
+      type: object
+      required: [self]
+      properties:
+        self:
+          $ref: '#/components/schemas/Enlace'
+        siguiente:
+          $ref: '#/components/schemas/Enlace'
+        anterior:
+          $ref: '#/components/schemas/Enlace'
+
+    # Autenticación
+    Credenciales:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    Token:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          description: Segundos de validez del token.
+          examples: [3600]
+    
+    # Usuarios
+    Rol:
+      type: string
+      enum: [usuario, administrador]
+    UsuarioNuevo:
+      type: object
+      required: [nombre, email, password]
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          description: |
+            Entre 8 caracteres y 72 bytes en UTF-8 (límite de bcrypt). Un carácter
+            como "ñ" ocupa 2 bytes, por lo que el máximo en caracteres puede ser menor que 72.
+        rol:
+          $ref: '#/components/schemas/Rol'
+          description: Solo lo considera un administrador; en otro caso se ignora.
+    Usuario:
+      type: object
+      required: [id, nombre, email, rol, creado_en, _links]
+      properties:
+        id:
+          type: integer
+          format: int64
+        nombre:
+          type: string
+        email:
+          type: string
+          format: email
+        rol:
+          $ref: '#/components/schemas/Rol'
+        creado_en:
+          type: string
+          format: date-time
+        _links:
+          type: object
+          required: [self]
+          properties:
+            self:
+              $ref: '#/components/schemas/Enlace'
+    ListaUsuarios:
+      type: object
+      required: [items, total, limit, offset, _links]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Usuario'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        _links:
+          $ref: '#/components/schemas/EnlacesPagina'
