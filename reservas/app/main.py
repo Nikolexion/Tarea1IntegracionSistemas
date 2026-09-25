@@ -1,7 +1,11 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import cache
+from pathlib import Path
+from typing import Any
 
+import yaml
 from fastapi import FastAPI
 
 from app.api import auth, usuarios
@@ -11,6 +15,8 @@ from app.dominio.usuarios import crear_administrador_inicial
 from app.persistencia.conexion import abrir_pool
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
+
+RUTA_CONTRATO = Path(__file__).resolve().parents[2] / "contratos" / "openapi.yaml"
 
 @asynccontextmanager
 async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
@@ -26,12 +32,17 @@ async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
     finally:
         await pool.close()
 
+@cache
+def contrato_openapi() -> dict[str, Any]:
+    with RUTA_CONTRATO.open(encoding="utf-8") as archivo:
+        return yaml.safe_load(archivo)
 
 def crear_app() -> FastAPI:
     app = FastAPI(title="CoLabora API de Reservas", version="1.0.0", lifespan=ciclo_de_vida)
     registrar_manejadores(app)
     for modulo in (auth, usuarios):
         app.include_router(modulo.router)
+    app.openapi = contrato_openapi
     return app
 
 

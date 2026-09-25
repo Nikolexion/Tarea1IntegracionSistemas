@@ -9,6 +9,7 @@ COPY reservas/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY reservas/ .
+COPY contratos/openapi.yaml /contratos/openapi.yaml
 
 EXPOSE 8000
 

@@ -1,5 +1,6 @@
 *
 
 !reservas/
+!contratos/openapi.yaml
 
 **/__pycache__
