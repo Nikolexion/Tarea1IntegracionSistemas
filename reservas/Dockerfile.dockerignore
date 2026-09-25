@@ -4,3 +4,4 @@
 !contratos/openapi.yaml
 
 **/__pycache__
+**/.pytest_cache
