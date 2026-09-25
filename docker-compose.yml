@@ -22,8 +22,52 @@ services:
       timeout: 3s
       retries: 10
 
+  # Base de datos de Reservas (postgreSQL)
+  reservas-db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${RESERVAS_DB_USUARIO}
+      POSTGRES_PASSWORD: ${RESERVAS_DB_PASSWORD}
+      POSTGRES_DB: ${RESERVAS_DB_NOMBRE}
+    ports:
+      # Solo accesible desde la máquina local (pruebas)
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - reservas-datos:/var/lib/postgresql/data
+      # Scripts de esquema, ejecutados solo al crear la base por primera vez
+      - ./reservas/db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Servicio Reservas (API REST)
+  reservas:
+    build:
+      # Contexto en la raíz: la imagen necesita también contratos/espacios.proto
+      context: .
+      dockerfile: reservas/Dockerfile
+    environment:
+      # URL armada aquí para no repetir credenciales en el .env
+      RESERVAS_DB_URL: postgresql://${RESERVAS_DB_USUARIO}:${RESERVAS_DB_PASSWORD}@reservas-db:5432/${RESERVAS_DB_NOMBRE}
+      ESPACIOS_DIRECCION: ${ESPACIOS_DIRECCION}
+      ESPACIOS_DEADLINE_MS: ${ESPACIOS_DEADLINE_MS}
+      JWT_SECRETO: ${JWT_SECRETO}
+      JWT_MINUTOS_VALIDEZ: ${JWT_MINUTOS_VALIDEZ}
+      REDIS_URL: ${REDIS_URL}
+      ADMIN_EMAIL_INICIAL: ${ADMIN_EMAIL_INICIAL:-}
+      ADMIN_PASSWORD_INICIAL: ${ADMIN_PASSWORD_INICIAL:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      # Solo su propia base. No depende de Espacios: Reservas debe arrancar
+      # y atender aunque Espacios esté caído.
+      reservas-db:
+        condition: service_healthy
 
 # Volúmenes nombrados, persistentes
 
 volumes:
   espacios-datos:
+  reservas-datos:
