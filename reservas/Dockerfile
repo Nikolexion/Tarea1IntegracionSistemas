@@ -9,7 +9,10 @@ COPY reservas/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY reservas/ .
+COPY contratos/espacios.proto /contratos/espacios.proto
 COPY contratos/openapi.yaml /contratos/openapi.yaml
+
+RUN python generar_codigo.py
 
 EXPOSE 8000
 

@@ -15,6 +15,13 @@ from app.dominio.errores import (
     NoEncontrado,
     SinPermiso,
 )
+from app.espacios_gateway.cliente import (
+    DatosRechazados,
+    EspaciosNoDisponible,
+    EspaciosSinRespuesta,
+    ErrorInesperadoEspacios,
+    SalaNoEncontrada,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +36,7 @@ class Problema(NamedTuple):
 
 BEARER = {"WWW-Authenticate": "Bearer"}
 BEARER_INVALIDO = {"WWW-Authenticate": 'Bearer error="invalid_token"'}
+REINTENTAR = {"Retry-After": "5"}
 
 PROBLEMAS: dict[type[Exception], Problema] = {
     SinToken: Problema(
@@ -45,8 +53,19 @@ PROBLEMAS: dict[type[Exception], Problema] = {
     ),
     SinPermiso: Problema(403, "sin-permiso", "Sin permiso"),
     NoEncontrado: Problema(404, "no-encontrado", "Recurso no encontrado"),
+    SalaNoEncontrada: Problema(404, "no-encontrado", "Recurso no encontrado", "La sala no existe."),
     EmailYaRegistrado: Problema(
         409, "email-registrado", "Email ya registrado", "Ya existe una cuenta con ese email."
+    ),
+    DatosRechazados: Problema(422, "datos-invalidos", "Datos inválidos"),  # mensaje de Espacios
+    EspaciosNoDisponible: Problema(
+        503, "espacios-no-disponible", "Servicio de espacios no disponible",
+        "El servicio de espacios no está disponible y no se realizó la operación. "
+        "Intente nuevamente en unos segundos.", REINTENTAR,
+    ),
+    EspaciosSinRespuesta: Problema(
+        504, "espacios-sin-respuesta", "Servicio de espacios sin respuesta",
+        "El servicio de espacios no respondió a tiempo; el resultado de la operación es incierto.",
     ),
 }
 
@@ -125,4 +144,5 @@ def registrar_manejadores(app: FastAPI) -> None:
         app.add_exception_handler(excepcion, manejar_problema)
     app.add_exception_handler(StarletteHTTPException, manejar_http)
     app.add_exception_handler(RequestValidationError, manejar_validacion)
+    app.add_exception_handler(ErrorInesperadoEspacios, manejar_no_controlado)
     app.add_exception_handler(Exception, manejar_no_controlado)

@@ -12,6 +12,7 @@ from app.api import auth, usuarios
 from app.api.errores import registrar_manejadores
 from app.config import cargar_configuracion
 from app.dominio.usuarios import crear_administrador_inicial
+from app.espacios_gateway.cliente import ClienteEspacios
 from app.persistencia.conexion import abrir_pool
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
@@ -23,6 +24,9 @@ async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
     configuracion = cargar_configuracion()
     app.state.configuracion = configuracion
     app.state.pool = pool = await abrir_pool(configuracion.reservas_db_url)
+    app.state.espacios = espacios = ClienteEspacios(
+        configuracion.espacios_direccion, configuracion.espacios_deadline_ms
+    )
     try:
         async with pool.connection() as conexion:
             await crear_administrador_inicial(
@@ -30,6 +34,7 @@ async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
             )
         yield
     finally:
+        await espacios.cerrar()
         await pool.close()
 
 @cache

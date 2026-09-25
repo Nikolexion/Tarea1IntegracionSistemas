@@ -6,6 +6,8 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Configuracion:
     reservas_db_url: str
+    espacios_direccion: str
+    espacios_deadline_ms: int
     jwt_secreto: str
     jwt_minutos_validez: int
     admin_email_inicial: str | None 
@@ -40,6 +42,8 @@ def cargar_configuracion(entorno: Mapping[str, str] | None = None) -> Configurac
     
     configuracion = Configuracion(
         reservas_db_url=obligatoria("RESERVAS_DB_URL"),
+        espacios_direccion=obligatoria("ESPACIOS_DIRECCION"),
+        espacios_deadline_ms=entero_positivo("ESPACIOS_DEADLINE_MS"),
         jwt_secreto=obligatoria("JWT_SECRET"),
         jwt_minutos_validez=entero_positivo("JWT_MINUTOS_VALIDEZ"),
         admin_email_inicial=opcional("ADMIN_EMAIL_INICIAL"),

@@ -1,7 +1,9 @@
 *
 
 !reservas/
+!contratos/espacios.proto
 !contratos/openapi.yaml
 
 **/__pycache__
 **/.pytest_cache
+reservas/app/generado

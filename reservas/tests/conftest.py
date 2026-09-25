@@ -9,12 +9,15 @@ import psycopg
 import pytest
 
 URL_BASE_PRUEBAS = "postgresql://reservas:reservas_dev@127.0.0.1:5434/reservas"
+DIRECCION_ESPACIOS = "127.0.0.1:50051"
 SECRETO_PRUEBAS = "secreto-solo-para-pruebas-de-reservas"
 PREFIJO_EMAIL_PRUEBA = "prueba-api-"
 PASSWORD_PRUEBA = "contrasena-de-prueba"
 
 os.environ.update({
     "RESERVAS_DB_URL": URL_BASE_PRUEBAS,
+    "ESPACIOS_DIRECCION": DIRECCION_ESPACIOS,
+    "ESPACIOS_DEADLINE_MS": "1000",
     "JWT_SECRETO": SECRETO_PRUEBAS,
     "JWT_MINUTOS_VALIDEZ": "60",
 })
