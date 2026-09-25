@@ -44,7 +44,7 @@
       <tbody id="tabla-grilla"></tbody>
     </table>
 
-    <h2>Mis reservas</h2>
+    <h2 id="titulo-reservas">Mis reservas</h2>
     <button id="boton-reservas">Actualizar</button>
     <table border="1">
       <thead>
@@ -52,6 +52,20 @@
       </thead>
       <tbody id="tabla-reservas"></tbody>
     </table>
+    <button id="mas-reservas" hidden>Ver más</button>
+
+    <!-- Solo para administradores -->
+    <section id="seccion-usuarios" hidden>
+      <h2>Usuarios</h2>
+      <button id="boton-usuarios">Actualizar</button>
+      <table border="1">
+        <thead>
+          <tr><th>Id</th><th>Nombre</th><th>Email</th><th>Rol</th></tr>
+        </thead>
+        <tbody id="tabla-usuarios"></tbody>
+      </table>
+      <button id="mas-usuarios" hidden>Ver más</button>
+    </section>
   </section>
 
   <script src="app.js"></script>

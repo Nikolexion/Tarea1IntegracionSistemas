@@ -71,13 +71,25 @@ function agregarBoton(celda, texto, alHacerClic) {
   celda.appendChild(boton);
 }
 
-// Muestra una página de un listado.
-function mostrarPagina(lista, idTabla, crearFila) {
+// Muestra una página de un listado. Si la respuesta trae el enlace "siguiente", el botón
+// "Ver más" lo sigue: la interfaz no calcula páginas, usa las que ofrece la API (ADR-014).
+function mostrarPagina(lista, idTabla, idBoton, crearFila, agregarAlFinal) {
   const tabla = document.getElementById(idTabla);
-  tabla.replaceChildren();
+  if (!agregarAlFinal) {
+    tabla.replaceChildren();
+  }
   for (const elemento of lista.items) {
     tabla.appendChild(crearFila(elemento));
   }
+  const boton = document.getElementById(idBoton);
+  const siguiente = lista._links && lista._links.siguiente;
+  boton.hidden = !siguiente;
+  boton.onclick = async function () {
+    const pagina = await seguirEnlace(siguiente);
+    if (pagina) {
+      mostrarPagina(pagina, idTabla, idBoton, crearFila, true);
+    }
+  };
 }
 
 // ------------------------------------------------------------
@@ -128,15 +140,26 @@ async function cargarSesion() {
   document.getElementById("seccion-acceso").hidden = true;
   document.getElementById("seccion-sesion").hidden = false;
 
+  const esAdministrador = usuario.rol === "administrador";
+  document.getElementById("seccion-usuarios").hidden = !esAdministrador;
+  // Un administrador ve todas las reservas, no solo las suyas
+  document.getElementById("titulo-reservas").textContent =
+    esAdministrador ? "Todas las reservas" : "Mis reservas";
+
   await cargarReservas();
+  if (esAdministrador) {
+    await cargarUsuarios();
+  }
 }
 
 function cerrarSesion() {
   sessionStorage.removeItem("token");
   document.getElementById("seccion-sesion").hidden = true;
+  document.getElementById("seccion-usuarios").hidden = true;
   document.getElementById("seccion-acceso").hidden = false;
   document.getElementById("tabla-grilla").replaceChildren();
   document.getElementById("tabla-reservas").replaceChildren();
+  document.getElementById("tabla-usuarios").replaceChildren();
 }
 
 // ------------------------------------------------------------
@@ -192,7 +215,7 @@ async function reservar(enlace) {
 async function cargarReservas() {
   const lista = await llamarApi("GET", "/v1/reservas");
   if (lista) {
-    mostrarPagina(lista, "tabla-reservas", filaReserva);
+    mostrarPagina(lista, "tabla-reservas", "mas-reservas", filaReserva, false);
   }
 }
 
@@ -223,6 +246,26 @@ async function cancelar(enlace) {
 }
 
 // ------------------------------------------------------------
+// Usuarios (solo administradores)
+// ------------------------------------------------------------
+
+async function cargarUsuarios() {
+  const lista = await llamarApi("GET", "/v1/usuarios");
+  if (lista) {
+    mostrarPagina(lista, "tabla-usuarios", "mas-usuarios", filaUsuario, false);
+  }
+}
+
+function filaUsuario(usuario) {
+  const fila = document.createElement("tr");
+  agregarCelda(fila, usuario.id);
+  agregarCelda(fila, usuario.nombre);
+  agregarCelda(fila, usuario.email);
+  agregarCelda(fila, usuario.rol);
+  return fila;
+}
+
+// ------------------------------------------------------------
 // Inicio
 // ------------------------------------------------------------
 
@@ -231,6 +274,7 @@ document.getElementById("form-registro").addEventListener("submit", registrarse)
 document.getElementById("boton-salir").addEventListener("click", cerrarSesion);
 document.getElementById("boton-grilla").addEventListener("click", cargarGrilla);
 document.getElementById("boton-reservas").addEventListener("click", cargarReservas);
+document.getElementById("boton-usuarios").addEventListener("click", cargarUsuarios);
 
 // Si la pestaña ya tenía un token (recarga de página), se retoma la sesión
 if (sessionStorage.getItem("token")) {
