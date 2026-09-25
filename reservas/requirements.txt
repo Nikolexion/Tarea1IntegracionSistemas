@@ -1,0 +1,10 @@
+# ============================================================
+# Dependencias del servicio Reservas (API REST)
+# Versiones fijadas para Python 3.12.
+# ============================================================
+
+# Ejecución
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+psycopg[binary]==3.3.6
+psycopg-pool==3.3.3
