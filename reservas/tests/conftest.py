@@ -1,3 +1,9 @@
+"""Pruebas contra el PostgreSQL de Reservas (127.0.0.1:5434) y el Espacios real de Docker Compose.
+
+No dejan datos: las cuentas de prueba usan un email con PREFIJO_EMAIL_PRUEBA y se borran al
+terminar, junto con sus reservas; `conexion_prueba` revierte su transacción
+"""
+
 import asyncio
 import os
 import sys
@@ -22,17 +28,18 @@ os.environ.update({
     "JWT_MINUTOS_VALIDEZ": "60",
     "REDIS_URL": "redis://127.0.0.1:6379/0",
 })
-
+# Sin administrador inicial: arrancar la aplicación en las pruebas no debe escribir en la base
 os.environ.pop("ADMIN_EMAIL_INICIAL", None)
 os.environ.pop("ADMIN_PASSWORD_INICIAL", None)
 
-from app.auth.contrasenas import generar_hash  
-from app.auth.tokens import emitir_token  
-from app.main import crear_app  
-from app.persistencia.usuarios import crear_usuario  
+from app.auth.contrasenas import generar_hash  # noqa: E402 (después de fijar el entorno)
+from app.auth.tokens import emitir_token  # noqa: E402
+from app.main import crear_app  # noqa: E402
+from app.persistencia.usuarios import crear_usuario  # noqa: E402
 
 
 def pytest_asyncio_loop_factories(config, item):
+    # En Windows, psycopg asíncrono no funciona con el bucle Proactor por defecto.
     if sys.platform == "win32":
         return {"selector": asyncio.SelectorEventLoop}
     return {"predeterminado": asyncio.new_event_loop}
@@ -43,14 +50,14 @@ def email_de_prueba() -> str:
 
 
 def crear_cliente(app) -> httpx.AsyncClient:
-    """Cliente HTTP en memoria; recibe el 500 en vez de propagar la excepción a la prueba"""
+    """Cliente HTTP en memoria; recibe el 500 en vez de propagar la excepción a la prueba."""
     transporte = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     return httpx.AsyncClient(transport=transporte, base_url="http://prueba")
 
 
 @pytest.fixture
 async def conexion_prueba():
-    """Conexión cuya transacción se revierte al terminar"""
+    """Conexión cuya transacción se revierte al terminar."""
     async with await psycopg.AsyncConnection.connect(URL_BASE_PRUEBAS) as conexion:
         yield conexion
         await conexion.rollback()
@@ -58,7 +65,8 @@ async def conexion_prueba():
 
 @pytest.fixture
 async def app_iniciada():
-    """Aplicación con el pool abierto; al terminar borra las cuentas de prueba"""
+    """Aplicación con el pool abierto; al terminar borra las cuentas de prueba, sus reservas y
+    sus claves de idempotencia."""
     app = crear_app()
     async with app.router.lifespan_context(app):
         yield app
@@ -77,6 +85,13 @@ async def app_iniciada():
                 "DELETE FROM liberaciones_pendientes WHERE referencia = ANY(%s)", (referencias,)
             )
             await conexion.execute("DELETE FROM reservas WHERE referencia = ANY(%s)", (referencias,))
+            await conexion.execute(
+                """
+                DELETE FROM claves_idempotencia
+                WHERE usuario_id IN (SELECT id FROM usuarios WHERE email LIKE %s)
+                """,
+                (PREFIJO_EMAIL_PRUEBA + "%",),
+            )
             await conexion.execute(
                 "DELETE FROM usuarios WHERE email LIKE %s", (PREFIJO_EMAIL_PRUEBA + "%",)
             )
@@ -101,7 +116,7 @@ class CuentaDePrueba:
 
 @pytest.fixture
 def crear_cuenta(app_iniciada):
-    """Crea una cuenta directo en la base, con su token, sin pasar por los endpoints probados"""
+    """Crea una cuenta directo en la base, con su token, sin pasar por los endpoints probados."""
     hashes: list[str] = []
 
     async def _crear(rol: str = "usuario") -> CuentaDePrueba:

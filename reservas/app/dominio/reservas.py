@@ -1,4 +1,7 @@
+"""Reglas de las reservas: crear con compensación, ver, listar y cancelar"""
+
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -20,20 +23,23 @@ from app.persistencia.reservas import ESTADO_ACTIVA, ReservaGuardada
 logger = logging.getLogger(__name__)
 
 Franja = tuple[int, date, str, str]  # sala_id, fecha, hora_inicio, hora_fin
+AlGuardar = Callable[[AsyncConnection, ReservaGuardada], Awaitable[None]]
 
 
-# Crear
 
-
+# Recibe el pool y no una conexión: la llamada a Espacios se hace sin conexión tomada y cada escritura usa su propia transacción corta
 async def crear(
     pool: AsyncConnectionPool,
     espacios: ClienteEspacios,
     franja: Franja,
     titular_id: int | None,
     quien_llama: Identidad,
+    al_guardar: AlGuardar | None = None,
 ) -> ReservaGuardada:
+    """`al_guardar` corre en la transacción que inserta la reserva."""
     sala_id, fecha, hora_inicio, hora_fin = franja
     titular_id = await _titular_efectivo(pool, titular_id, quien_llama)
+    # Se genera antes de guardar: sirve para compensar aunque la reserva nunca se guarde
     referencia = uuid4()
 
     try:
@@ -41,26 +47,33 @@ async def crear(
             sala_id, fecha.isoformat(), hora_inicio, hora_fin, str(referencia)
         )
     except SalaNoEncontrada:
+        # La sala viene en el cuerpo, no en la URL: 422 y no 404.
         raise DatosInvalidos(f"No existe una sala con id {sala_id} (sala_id).") from None
     except EspaciosSinRespuesta:
+        # Resultado incierto: se encola la liberación y se responde 504 aunque el encolado
+        # falle.
         await _encolar_liberacion(pool, referencia, franja)
         raise
 
     if respuesta.resultado == pb.RESULTADO_OCUPACION_SIN_PUESTOS:
         raise SinPuestos()
     if respuesta.resultado != pb.RESULTADO_OCUPACION_OCUPADO:
+        # 500 sin compensar.
         raise ErrorInesperadoEspacios(f"OcuparPuesto devolvió el resultado {respuesta.resultado}")
 
     try:
         async with pool.connection() as conexion:
-            return await reservas.insertar(
+            reserva = await reservas.insertar(
                 conexion, referencia, sala_id, respuesta.sala_nombre, fecha, hora_inicio,
                 hora_fin, titular_id, quien_llama.usuario_id,
             )
+            if al_guardar is not None:
+                await al_guardar(conexion, reserva)
+            return reserva
     except Exception:
         logger.exception("Se ocupó el puesto %s pero no se pudo guardar la reserva", referencia)
         await _compensar(pool, espacios, referencia, franja)
-        raise 
+        raise  # el manejador global responde 500
 
 
 async def _titular_efectivo(
@@ -80,7 +93,7 @@ async def _titular_efectivo(
 async def _compensar(
     pool: AsyncConnectionPool, espacios: ClienteEspacios, referencia: UUID, franja: Franja
 ) -> None:
-    """Libera directo en Espacios y, si falla, encola la liberación (ADR-010 punto 4). No lanza."""
+    """Libera directo en Espacios y, si falla, encola la liberación. No lanza."""
     try:
         await espacios.liberar_puesto(str(referencia))
         logger.info("Compensación: puesto %s liberado directo en Espacios", referencia)
@@ -95,14 +108,14 @@ async def _encolar_liberacion(pool: AsyncConnectionPool, referencia: UUID, franj
         async with pool.connection() as conexion:
             await reservas.encolar_liberacion(conexion, referencia, *franja)
     except Exception:
+        # Riesgo residual aceptado en ADR-010: el puesto puede quedar ocupado sin reserva
         logger.exception("No se pudo encolar la liberación de %s: liberarla a mano", referencia)
 
-
-# Consultar
 
 async def obtener(
     conexion: AsyncConnection, reserva_id: int, quien_llama: Identidad, bloquear: bool = False
 ) -> ReservaGuardada:
+    """La reserva si es del titular o llama un administrador; ajena → no encontrada."""
     reserva = await reservas.obtener_por_id(conexion, reserva_id, bloquear)
     es_visible = reserva is not None and (
         reserva.titular_id == quien_llama.usuario_id or quien_llama.rol == ROL_ADMINISTRADOR
@@ -115,17 +128,17 @@ async def obtener(
 async def listar(
     conexion: AsyncConnection, quien_llama: Identidad, limit: int, offset: int
 ) -> tuple[list[ReservaGuardada], int]:
+    """Un usuario ve solo las suyas (como titular); un administrador, todas."""
     titular_id = None if quien_llama.rol == ROL_ADMINISTRADOR else quien_llama.usuario_id
     return await reservas.listar(conexion, titular_id, limit, offset)
 
 
-# Cancelar
+
 
 async def cancelar(
     conexion: AsyncConnection, reserva_id: int, quien_llama: Identidad
 ) -> ReservaGuardada:
-    """Marca CANCELADA y encola la liberación en la misma transacción, sin llamar a Espacios
-    (ADR-010 punto 5). Si ya estaba cancelada no hace nada (idempotente)."""
+    """Marca CANCELADA y encola la liberación en la misma transacción, sin llamar a Espacios. Si ya estaba cancelada no hace nada (idempotente)."""
     reserva = await obtener(conexion, reserva_id, quien_llama, bloquear=True)
     if reserva.estado != ESTADO_ACTIVA:
         return reserva
