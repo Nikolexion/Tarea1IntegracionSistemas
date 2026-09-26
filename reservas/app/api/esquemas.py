@@ -15,7 +15,7 @@ Hora = Annotated[str, Field(pattern=PATRON_HORA)]
 
 
 class Enlace(BaseModel):
-    """Acción disponible sobre un recurso: HAL extendido con `method` y `body` (ADR-014)."""
+    """Acción disponible sobre un recurso: HAL extendido con `method` y `body`."""
 
     href: str
     method: Literal["GET", "POST", "PATCH"]
@@ -117,7 +117,7 @@ class ReservaNueva(BaseModel):
     fecha: date
     hora_inicio: Hora
     hora_fin: Hora
-    titular_id: int | None = None  # solo un administrador puede indicar a otro (ADR-007)
+    titular_id: int | None = None  # solo un administrador puede indicar a otro
 
 
 class Reserva(ConEnlaces):

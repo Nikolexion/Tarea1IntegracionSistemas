@@ -1,4 +1,4 @@
-"""Reservas: `/v1/reservas` (permisos según ADR-007; flujo y fallas según ADR-009 y ADR-010)."""
+"""Reservas: `/v1/reservas`."""
 
 from dataclasses import asdict
 from typing import Annotated

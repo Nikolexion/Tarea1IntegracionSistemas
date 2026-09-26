@@ -99,7 +99,7 @@ async def encolar_liberacion(
 async def leer_liberaciones_pendientes(
     conexion: AsyncConnection, limite: int
 ) -> list[LiberacionPendiente]:
-    """Las más antiguas primero. Sin FOR UPDATE: liberar es idempotente (ADR-010 punto 5)."""
+    """Las más antiguas primero. Sin FOR UPDATE: liberar es idempotente."""
     cursor = conexion.cursor(row_factory=class_row(LiberacionPendiente))
     await cursor.execute(
         """

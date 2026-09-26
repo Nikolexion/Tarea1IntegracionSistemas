@@ -96,7 +96,7 @@ async def _titular_efectivo(
 async def _compensar(
     pool: AsyncConnectionPool, espacios: ClienteEspacios, referencia: UUID, franja: Franja
 ) -> None:
-    """Libera directo en Espacios y, si falla, encola la liberación (ADR-010 punto 4). No lanza."""
+    """Libera directo en Espacios y, si falla, encola la liberación. No lanza."""
     try:
         await espacios.liberar_puesto(str(referencia))
         logger.info("Compensación: puesto %s liberado directo en Espacios", referencia)
@@ -111,7 +111,7 @@ async def _encolar_liberacion(pool: AsyncConnectionPool, referencia: UUID, franj
         async with pool.connection() as conexion:
             await reservas.encolar_liberacion(conexion, referencia, *franja)
     except Exception:
-        # Riesgo residual aceptado en ADR-010: el puesto puede quedar ocupado sin reserva
+        # Riesgo residual aceptado: el puesto puede quedar ocupado sin reserva
         logger.exception("No se pudo encolar la liberación de %s: liberarla a mano", referencia)
 
 
@@ -119,7 +119,7 @@ async def _encolar_liberacion(pool: AsyncConnectionPool, referencia: UUID, franj
 async def obtener(
     conexion: AsyncConnection, reserva_id: int, quien_llama: Identidad, bloquear: bool = False
 ) -> ReservaGuardada:
-    """La reserva si es del titular o llama un administrador; ajena → no encontrada (ADR-007)."""
+    """La reserva si es del titular o llama un administrador; ajena → no encontrada."""
     reserva = await reservas.obtener_por_id(conexion, reserva_id, bloquear)
     es_visible = reserva is not None and (
         reserva.titular_id == quien_llama.usuario_id or quien_llama.rol == ROL_ADMINISTRADOR
@@ -141,8 +141,7 @@ async def listar(
 async def cancelar(
     conexion: AsyncConnection, reserva_id: int, quien_llama: Identidad
 ) -> ReservaGuardada:
-    """Marca CANCELADA y encola la liberación en la misma transacción, sin llamar a Espacios
-    (ADR-010 punto 5). Si ya estaba cancelada no hace nada (idempotente)."""
+    """Marca CANCELADA y encola la liberación en la misma transacción, sin llamar a Espacios. Si ya estaba cancelada no hace nada (idempotente)."""
     reserva = await obtener(conexion, reserva_id, quien_llama, bloquear=True)
     if reserva.estado != ESTADO_ACTIVA:
         return reserva

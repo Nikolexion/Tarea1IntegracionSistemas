@@ -1,4 +1,4 @@
-"""Gateway hacia el Espacios real y traducción de sus errores a HTTP (ADR-010)."""
+"""Gateway hacia el Espacios real y traducción de sus errores a HTTP."""
 
 import asyncio
 import uuid

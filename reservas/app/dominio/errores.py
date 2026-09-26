@@ -14,7 +14,7 @@ class SinPermiso(Exception):
 
 
 class NoEncontrado(Exception):
-    """El recurso no existe o no es de quien lo pide (ADR-007: ajeno → no encontrado)."""
+    """El recurso no existe o no es de quien lo pide."""
 
 
 class DatosInvalidos(Exception):
