@@ -25,6 +25,16 @@ class ReservaGuardada:
     cancelada_en: datetime | None
 
 
+@dataclass(frozen=True)
+class LiberacionPendiente:
+    id: int
+    referencia: UUID
+    sala_id: int
+    fecha: date
+    hora_inicio: str
+    hora_fin: str
+    intentos: int
+
 _COLUMNAS = """
     id, referencia, estado, sala_id, sala_nombre, fecha,
     to_char(hora_inicio, 'HH24:MI') AS hora_inicio, to_char(hora_fin, 'HH24:MI') AS hora_fin,
@@ -83,6 +93,38 @@ async def encolar_liberacion(
         VALUES (%s, %s, %s, %s, %s)
         """,
         (referencia, sala_id, fecha, hora_inicio, hora_fin),
+    )
+
+
+async def leer_liberaciones_pendientes(
+    conexion: AsyncConnection, limite: int
+) -> list[LiberacionPendiente]:
+    """Las más antiguas primero. Sin FOR UPDATE: liberar es idempotente (ADR-010 punto 5)."""
+    cursor = conexion.cursor(row_factory=class_row(LiberacionPendiente))
+    await cursor.execute(
+        """
+        SELECT id, referencia, sala_id, fecha, to_char(hora_inicio, 'HH24:MI') AS hora_inicio,
+               to_char(hora_fin, 'HH24:MI') AS hora_fin, intentos
+        FROM liberaciones_pendientes ORDER BY creada_en, id LIMIT %s
+        """,
+        (limite,),
+    )
+    return await cursor.fetchall()
+
+
+async def borrar_liberacion(conexion: AsyncConnection, liberacion_id: int) -> None:
+    await conexion.execute("DELETE FROM liberaciones_pendientes WHERE id = %s", (liberacion_id,))
+
+
+async def registrar_fallo_liberacion(
+    conexion: AsyncConnection, liberacion_id: int, error: str
+) -> None:
+    await conexion.execute(
+        """
+        UPDATE liberaciones_pendientes SET intentos = intentos + 1, ultimo_error = %s
+        WHERE id = %s
+        """,
+        (error, liberacion_id),
     )
 
 

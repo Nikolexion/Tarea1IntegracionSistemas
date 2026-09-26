@@ -1,6 +1,6 @@
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from app.api import auth, reservas, salas, usuarios
 from app.api.errores import registrar_manejadores
+from app.cola.procesador import procesar_cola
 from app.config import cargar_configuracion
 from app.dominio.usuarios import crear_administrador_inicial
 from app.espacios_gateway.cliente import ClienteEspacios
@@ -27,6 +28,7 @@ async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
     app.state.espacios = espacios = ClienteEspacios(
         configuracion.espacios_direccion, configuracion.espacios_deadline_ms
     )
+    cola = asyncio.create_task(procesar_cola(pool, espacios))
     try:
         async with pool.connection() as conexion:
             await crear_administrador_inicial(
@@ -34,6 +36,9 @@ async def ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
             )
         yield
     finally:
+        cola.cancel()
+        with suppress(asyncio.CancelledError):
+            await cola
         await espacios.cerrar()
         await pool.close()
 
@@ -45,7 +50,7 @@ def contrato_openapi() -> dict[str, Any]:
 def crear_app() -> FastAPI:
     app = FastAPI(title="CoLabora API de Reservas", version="1.0.0", lifespan=ciclo_de_vida)
     registrar_manejadores(app)
-    for modulo in (auth, reservas, usuarios, salas):
+    for modulo in (auth, usuarios, salas, reservas):
         app.include_router(modulo.router)
     app.openapi = contrato_openapi
     return app

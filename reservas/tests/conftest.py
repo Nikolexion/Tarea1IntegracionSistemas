@@ -20,6 +20,7 @@ os.environ.update({
     "ESPACIOS_DEADLINE_MS": "1000",
     "JWT_SECRETO": SECRETO_PRUEBAS,
     "JWT_MINUTOS_VALIDEZ": "60",
+    "REDIS_URL": "redis://127.0.0.1:6379/0",
 })
 
 os.environ.pop("ADMIN_EMAIL_INICIAL", None)
@@ -62,6 +63,20 @@ async def app_iniciada():
     async with app.router.lifespan_context(app):
         yield app
         async with app.state.pool.connection() as conexion:
+            cursor = await conexion.execute(
+                """
+                SELECT DISTINCT r.referencia FROM reservas r JOIN usuarios u
+                  ON u.id IN (r.titular_id, r.creada_por_id) WHERE u.email LIKE %s
+                """,
+                (PREFIJO_EMAIL_PRUEBA + "%",),
+            )
+            referencias = [referencia for (referencia,) in await cursor.fetchall()]
+            for referencia in referencias:
+                await app.state.espacios.liberar_puesto(str(referencia))
+            await conexion.execute(
+                "DELETE FROM liberaciones_pendientes WHERE referencia = ANY(%s)", (referencias,)
+            )
+            await conexion.execute("DELETE FROM reservas WHERE referencia = ANY(%s)", (referencias,))
             await conexion.execute(
                 "DELETE FROM usuarios WHERE email LIKE %s", (PREFIJO_EMAIL_PRUEBA + "%",)
             )

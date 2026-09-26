@@ -10,6 +10,7 @@ class Configuracion:
     espacios_deadline_ms: int
     jwt_secreto: str
     jwt_minutos_validez: int
+    redis_url: str
     admin_email_inicial: str | None 
     admin_password_inicial: str | None
 
@@ -46,6 +47,7 @@ def cargar_configuracion(entorno: Mapping[str, str] | None = None) -> Configurac
         espacios_deadline_ms=entero_positivo("ESPACIOS_DEADLINE_MS"),
         jwt_secreto=obligatoria("JWT_SECRET"),
         jwt_minutos_validez=entero_positivo("JWT_MINUTOS_VALIDEZ"),
+        redis_url=obligatoria("REDIS_URL"),
         admin_email_inicial=opcional("ADMIN_EMAIL_INICIAL"),
         admin_password_inicial=opcional("ADMIN_PASSWORD_INICIAL"),
     )
