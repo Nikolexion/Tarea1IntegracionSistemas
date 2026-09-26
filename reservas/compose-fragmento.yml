@@ -1,6 +1,0 @@
-# En services.reservas.environment, justo después de REDIS_URL:
-      CACHE_TTL_SEGUNDOS: ${CACHE_TTL_SEGUNDOS:-30}
-
-  redis:
-    image: redis:7
-    # Sin volumen ni puertos: la caché es desechable y solo la usa Reservas.
