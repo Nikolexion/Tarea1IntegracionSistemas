@@ -64,7 +64,7 @@ async def crear_sala(pool):
 @pytest.fixture
 async def cliente_grpc(repositorio):
     """Stub conectado a un servidor gRPC real levantado en este mismo proceso"""
-    servidor, puerto = crear_servidor(ServicioEspacios(repositorio), "127.0.0.1:0")
+    servidor, puerto = crear_servidor(ServicioEspacios(repositorio, latencia_artificial_ms=0), "127.0.0.1:0")
     await servidor.start()
     async with grpc.aio.insecure_channel(f"127.0.0.1:{puerto}") as canal:
         yield espacios_pb2_grpc.EspaciosStub(canal)

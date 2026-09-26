@@ -1,5 +1,5 @@
 """Las 4 RPC de contratos/espacios.proto"""
-
+import asyncio
 import re
 from contextlib import asynccontextmanager
 from datetime import date, time
@@ -88,12 +88,15 @@ def a_disponibilidad_proto(fila: dict, franja: espacios_pb2.Franja) -> espacios_
 
 # --- Servicio gRPC ---
 class ServicioEspacios(espacios_pb2_grpc.EspaciosServicer):
-    def __init__(self, repositorio: RepositorioEspacios):
+    def __init__(self, repositorio: RepositorioEspacios, latencia_artificial_ms: int):
         self._repositorio = repositorio
+        self._latencia_artificial_s = latencia_artificial_ms / 1000
 
     @asynccontextmanager
     async def _atender(self, context: grpc.aio.ServicerContext):
-        """Traduce las excepciones a códigos de estado gRPC."""
+        """Aplica la latencia artificial y traduce las excepciones a códigos de estado gRPC"""
+        if self._latencia_artificial_s > 0:
+            await asyncio.sleep(self._latencia_artificial_s)
         try:
             yield
         except tuple(CODIGO_POR_ERROR) as error:

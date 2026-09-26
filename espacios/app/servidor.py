@@ -28,7 +28,7 @@ async def ejecutar(config: Config) -> None:
     try:
         repositorio = RepositorioEspacios(pool, config.zona_horaria)
         await repositorio.verificar_zona_horaria()
-        servicio = ServicioEspacios(repositorio)
+        servicio = ServicioEspacios(repositorio, config.latencia_artificial_ms)
         servidor, puerto = crear_servidor(servicio, f"[::]:{config.puerto_grpc}")
         await servidor.start()
         registro.info("Espacios escuchando en el puerto %s", puerto)

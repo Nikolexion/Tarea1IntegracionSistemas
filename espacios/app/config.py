@@ -9,6 +9,7 @@ from dataclasses import dataclass
 class Config:
     db_url: str
     puerto_grpc: int
+    latencia_artificial_ms: int
     zona_horaria: str # la valida postgreSQL al arrancar 
 
     @classmethod
@@ -16,6 +17,7 @@ class Config:
         return cls(
             db_url=_leer_texto("ESPACIOS_DB_URL"),
             puerto_grpc=_leer_entero("ESPACIOS_PUERTO_GRPC", minimo=1),
+            latencia_artificial_ms=_leer_entero("ESPACIOS_LATENCIA_ARTIFICIAL_MS", minimo=0),
             zona_horaria=_leer_texto("ESPACIOS_ZONA_HORARIA"),
         )
 
