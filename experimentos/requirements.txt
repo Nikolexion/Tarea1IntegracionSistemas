@@ -1,0 +1,2 @@
+# Dependencias de los experimentos (httpx viene en reservas/requirements.txt)
+matplotlib==3.11.2
