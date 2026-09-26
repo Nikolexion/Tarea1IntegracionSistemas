@@ -15,7 +15,7 @@ from app.espacios_gateway.cliente import (
 )
 from app.generado import espacios_pb2 as pb
 from app.persistencia import reservas, usuarios
-from app.persistencia.reservas import ReservaGuardada
+from app.persistencia.reservas import ESTADO_ACTIVA, ReservaGuardada
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +101,9 @@ async def _encolar_liberacion(pool: AsyncConnectionPool, referencia: UUID, franj
 # Consultar
 
 async def obtener(
-    conexion: AsyncConnection, reserva_id: int, quien_llama: Identidad
+    conexion: AsyncConnection, reserva_id: int, quien_llama: Identidad, bloquear: bool = False
 ) -> ReservaGuardada:
-    reserva = await reservas.obtener_por_id(conexion, reserva_id)
+    reserva = await reservas.obtener_por_id(conexion, reserva_id, bloquear)
     es_visible = reserva is not None and (
         reserva.titular_id == quien_llama.usuario_id or quien_llama.rol == ROL_ADMINISTRADOR
     )
@@ -117,3 +117,21 @@ async def listar(
 ) -> tuple[list[ReservaGuardada], int]:
     titular_id = None if quien_llama.rol == ROL_ADMINISTRADOR else quien_llama.usuario_id
     return await reservas.listar(conexion, titular_id, limit, offset)
+
+
+# Cancelar
+
+async def cancelar(
+    conexion: AsyncConnection, reserva_id: int, quien_llama: Identidad
+) -> ReservaGuardada:
+    """Marca CANCELADA y encola la liberación en la misma transacción, sin llamar a Espacios
+    (ADR-010 punto 5). Si ya estaba cancelada no hace nada (idempotente)."""
+    reserva = await obtener(conexion, reserva_id, quien_llama, bloquear=True)
+    if reserva.estado != ESTADO_ACTIVA:
+        return reserva
+    cancelada = await reservas.cancelar(conexion, reserva_id)
+    await reservas.encolar_liberacion(
+        conexion, reserva.referencia, reserva.sala_id, reserva.fecha,
+        reserva.hora_inicio, reserva.hora_fin,
+    )
+    return cancelada

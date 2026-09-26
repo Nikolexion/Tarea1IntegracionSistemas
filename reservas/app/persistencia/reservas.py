@@ -6,6 +6,7 @@ from psycopg import AsyncConnection
 from psycopg.rows import class_row
 
 ESTADO_ACTIVA = "ACTIVA"
+ESTADO_CANCELADA = "CANCELADA"
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,16 @@ async def insertar(
     return await cursor.fetchone()
 
 
+async def cancelar(conexion: AsyncConnection, reserva_id: int) -> ReservaGuardada:
+    cursor = conexion.cursor(row_factory=class_row(ReservaGuardada))
+    await cursor.execute(
+        f"UPDATE reservas SET estado = %s, cancelada_en = now() WHERE id = %s "
+        f"RETURNING {_COLUMNAS}",
+        (ESTADO_CANCELADA, reserva_id),
+    )
+    return await cursor.fetchone()
+
+
 # Cola de liberaciones
 
 async def encolar_liberacion(
@@ -77,9 +88,12 @@ async def encolar_liberacion(
 
 # Lectura
 
-async def obtener_por_id(conexion: AsyncConnection, reserva_id: int) -> ReservaGuardada | None:
+async def obtener_por_id(
+    conexion: AsyncConnection, reserva_id: int, bloquear: bool = False
+) -> ReservaGuardada | None:
+    bloqueo = "FOR UPDATE" if bloquear else ""
     cursor = conexion.cursor(row_factory=class_row(ReservaGuardada))
-    await cursor.execute(f"SELECT {_COLUMNAS} FROM reservas WHERE id = %s", (reserva_id,))
+    await cursor.execute(f"SELECT {_COLUMNAS} FROM reservas WHERE id = %s {bloqueo}", (reserva_id,))
     return await cursor.fetchone()
 
 

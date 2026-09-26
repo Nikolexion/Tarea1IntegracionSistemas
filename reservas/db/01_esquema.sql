@@ -26,3 +26,15 @@ CREATE TABLE reservas (
 CREATE INDEX reservas_titular_idx ON reservas (titular_id, creada_en DESC);
 
 CREATE INDEX reservas_creada_en_idx ON reservas (creada_en DESC);
+
+CREATE TABLE liberaciones_pendientes (
+    id           BIGSERIAL   PRIMARY KEY,
+    referencia   UUID        NOT NULL,
+    sala_id      BIGINT      NOT NULL,
+    fecha        DATE        NOT NULL,
+    hora_inicio  TIME        NOT NULL,
+    hora_fin     TIME        NOT NULL,
+    intentos     INT         NOT NULL DEFAULT 0,
+    ultimo_error TEXT        NULL,
+    creada_en    TIMESTAMPTZ NOT NULL DEFAULT now()
+);

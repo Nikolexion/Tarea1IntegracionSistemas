@@ -134,5 +134,11 @@ class Reserva(ConEnlaces):
     cancelada_en: datetime | None = None
 
 
+class CancelacionReserva(BaseModel):
+    """JSON Merge Patch: el único cambio admitido es cancelar (otro valor → 422)."""
+
+    estado: Literal["CANCELADA"]
+
+
 class ListaReservas(Listado):
     items: list[Reserva]
