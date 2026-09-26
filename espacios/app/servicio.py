@@ -21,8 +21,9 @@ from app.repositorio import (
 )
 
 
+# --- Errores como códigos de estado gRPC (los resultados normales van en enums, ADR-013) ---
 class FormatoInvalido(Exception):
-    """La petición no respeta el formato del contrato (fecha, hora o referencia)"""
+    """La petición no respeta el formato del contrato (fecha, hora o referencia)."""
 
 
 CODIGO_POR_ERROR = {
@@ -36,7 +37,7 @@ CODIGO_POR_ERROR = {
 
 # --- Lectura de la petición ---
 def _leer(texto: str, patron: str, convertir, nombre: str, esperado: str):
-    # Regex primero: fromisoformat también acepta variantes ("20261001") que el contrato no permite
+    # Regex primero: fromisoformat también acepta variantes ("20261001") que el contrato no permite.
     if not re.fullmatch(patron, texto):
         raise FormatoInvalido(f"{nombre} con formato inválido: {texto!r} (se espera {esperado})")
     try:
@@ -101,10 +102,10 @@ class ServicioEspacios(espacios_pb2_grpc.EspaciosServicer):
             yield
         except tuple(CODIGO_POR_ERROR) as error:
             await context.abort(CODIGO_POR_ERROR[type(error)], str(error))
-        except LockNotAvailable:  # se superó el lock_timeout: no se ocupó nada
-            await context.abort(grpc.StatusCode.ABORTED, "La sala estuvo bloqueada demasiado tiempo, reintente")
-        except PoolTimeout:  # pool acotado sin conexion libre, no se hizo nada
-            await context.abort(grpc.StatusCode.UNAVAILABLE, "Servicio saturado, reintente más tarde")
+        except LockNotAvailable:  # se superó el lock_timeout: no se ocupó nada (ADR-017)
+            await context.abort(grpc.StatusCode.ABORTED, "La sala estuvo bloqueada demasiado tiempo; reintente")
+        except PoolTimeout:  # pool acotado sin conexión libre: no se hizo nada (ADR-017)
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "Servicio saturado; reintente más tarde")
 
     async def ConsultarDisponibilidad(self, request, context):
         async with self._atender(context):

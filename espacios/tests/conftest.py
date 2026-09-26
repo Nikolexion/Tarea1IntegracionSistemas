@@ -1,9 +1,8 @@
-"""
-Fixtures contra la base real espacios-db
-"""
+"""Fixtures contra la base real (espacios-db en 127.0.0.1:5433); cada prueba borra lo que crea."""
 
 import asyncio
 import itertools
+
 import grpc
 import pytest
 
@@ -17,6 +16,7 @@ _ids_de_sala = itertools.count(9000)  # ids altos para no chocar con la semilla
 
 
 def pytest_asyncio_loop_factories(config, item):
+    # psycopg asíncrono no funciona con el bucle por defecto de Windows (Proactor).
     return {"selector": asyncio.SelectorEventLoop}
 
 
@@ -37,7 +37,7 @@ async def repositorio(pool):
 
 @pytest.fixture
 async def crear_sala(pool):
-    """Función que crea una sala de prueba con la capacidad dada y devuelve su id"""
+    """Función que crea una sala de prueba con la capacidad dada y devuelve su id."""
     creadas = []
 
     async def borrar(conexion, sala_id: int) -> None:
