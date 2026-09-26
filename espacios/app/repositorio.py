@@ -110,6 +110,11 @@ class RepositorioEspacios:
     async def liberar(self, referencia: str) -> ResultadoLiberacion:
         # Libera por referencia
         async with self._transaccion() as conexion:
+            existente = await _buscar_ocupacion(conexion, referencia)
+            if existente is not None and existente["estado"] == "ACTIVA":
+                # Se bloquea la sala como al ocupar: una ocupación simultanea cuenta los
+                # puestos despues de liberarse
+                await _buscar_sala(conexion, existente["sala_id"], bloquear=True)
             if await _marcar_liberada(conexion, referencia):
                 return ResultadoLiberacion.LIBERADO
             if await _registrar_liberacion(conexion, referencia):
