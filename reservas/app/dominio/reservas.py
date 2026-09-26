@@ -9,6 +9,7 @@ from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 
 from app.auth.tokens import ROL_ADMINISTRADOR, Identidad
+from app.cache.disponibilidad import CacheDisponibilidad
 from app.dominio.errores import DatosInvalidos, NoEncontrado, SinPermiso, SinPuestos
 from app.espacios_gateway.cliente import (
     ClienteEspacios,
@@ -31,12 +32,13 @@ AlGuardar = Callable[[AsyncConnection, ReservaGuardada], Awaitable[None]]
 async def crear(
     pool: AsyncConnectionPool,
     espacios: ClienteEspacios,
+    cache: CacheDisponibilidad,
     franja: Franja,
     titular_id: int | None,
     quien_llama: Identidad,
     al_guardar: AlGuardar | None = None,
 ) -> ReservaGuardada:
-    """`al_guardar` corre en la transacción que inserta la reserva."""
+    """`al_guardar` corre en la transacción que inserta la reserva"""
     sala_id, fecha, hora_inicio, hora_fin = franja
     titular_id = await _titular_efectivo(pool, titular_id, quien_llama)
     # Se genera antes de guardar: sirve para compensar aunque la reserva nunca se guarde
@@ -47,19 +49,20 @@ async def crear(
             sala_id, fecha.isoformat(), hora_inicio, hora_fin, str(referencia)
         )
     except SalaNoEncontrada:
-        # La sala viene en el cuerpo, no en la URL: 422 y no 404.
+        # La sala viene en el cuerpo, no en la URL: 422 y no 404
         raise DatosInvalidos(f"No existe una sala con id {sala_id} (sala_id).") from None
     except EspaciosSinRespuesta:
-        # Resultado incierto: se encola la liberación y se responde 504 aunque el encolado
-        # falle.
+        # Resultado incierto: se encola la liberación y se responde 504 aunque el encolado falle
         await _encolar_liberacion(pool, referencia, franja)
         raise
 
     if respuesta.resultado == pb.RESULTADO_OCUPACION_SIN_PUESTOS:
         raise SinPuestos()
     if respuesta.resultado != pb.RESULTADO_OCUPACION_OCUPADO:
-        # 500 sin compensar.
+        # 500 sin compensar
         raise ErrorInesperadoEspacios(f"OcuparPuesto devolvió el resultado {respuesta.resultado}")
+    # Espacios ocupó un puesto: la grilla guardada de esa fecha quedó vieja
+    await cache.invalidar(fecha)
 
     try:
         async with pool.connection() as conexion:
@@ -93,7 +96,7 @@ async def _titular_efectivo(
 async def _compensar(
     pool: AsyncConnectionPool, espacios: ClienteEspacios, referencia: UUID, franja: Franja
 ) -> None:
-    """Libera directo en Espacios y, si falla, encola la liberación. No lanza."""
+    """Libera directo en Espacios y, si falla, encola la liberación (ADR-010 punto 4). No lanza."""
     try:
         await espacios.liberar_puesto(str(referencia))
         logger.info("Compensación: puesto %s liberado directo en Espacios", referencia)
@@ -112,10 +115,11 @@ async def _encolar_liberacion(pool: AsyncConnectionPool, referencia: UUID, franj
         logger.exception("No se pudo encolar la liberación de %s: liberarla a mano", referencia)
 
 
+
 async def obtener(
     conexion: AsyncConnection, reserva_id: int, quien_llama: Identidad, bloquear: bool = False
 ) -> ReservaGuardada:
-    """La reserva si es del titular o llama un administrador; ajena → no encontrada."""
+    """La reserva si es del titular o llama un administrador; ajena → no encontrada (ADR-007)."""
     reserva = await reservas.obtener_por_id(conexion, reserva_id, bloquear)
     es_visible = reserva is not None and (
         reserva.titular_id == quien_llama.usuario_id or quien_llama.rol == ROL_ADMINISTRADOR
@@ -134,11 +138,11 @@ async def listar(
 
 
 
-
 async def cancelar(
     conexion: AsyncConnection, reserva_id: int, quien_llama: Identidad
 ) -> ReservaGuardada:
-    """Marca CANCELADA y encola la liberación en la misma transacción, sin llamar a Espacios. Si ya estaba cancelada no hace nada (idempotente)."""
+    """Marca CANCELADA y encola la liberación en la misma transacción, sin llamar a Espacios
+    (ADR-010 punto 5). Si ya estaba cancelada no hace nada (idempotente)."""
     reserva = await obtener(conexion, reserva_id, quien_llama, bloquear=True)
     if reserva.estado != ESTADO_ACTIVA:
         return reserva

@@ -10,6 +10,7 @@ from app.api.esquemas import CancelacionReserva, ListaReservas, Reserva, Reserva
 from app.api.paginacion import ParametrosPagina, sobre_pagina
 from app.auth.dependencias import IdentidadObligatoria
 from app.auth.tokens import Identidad
+from app.cache.disponibilidad import Cache
 from app.dominio import idempotencia
 from app.dominio import reservas as dominio_reservas
 from app.espacios_gateway.cliente import Espacios
@@ -35,13 +36,14 @@ async def crear_reserva(
     response: Response,
     identidad: IdentidadObligatoria,
     espacios: Espacios,
+    cache: Cache,
     idempotency_key: IdempotencyKey = None,
 ) -> Reserva:
     pool = request.app.state.pool
     franja = (datos.sala_id, datos.fecha, datos.hora_inicio, datos.hora_fin)
     if idempotency_key is None:
         reserva = await dominio_reservas.crear(
-            pool, espacios, franja, datos.titular_id, identidad
+            pool, espacios, cache, franja, datos.titular_id, identidad
         )
         response.headers["Location"] = ruta_reserva(reserva.id)
         return a_respuesta(reserva, identidad)
@@ -51,7 +53,7 @@ async def crear_reserva(
     cuerpo = await idempotencia.registrar(pool, clave)
     if cuerpo is None:  # primera vez (o clave abandonada): se reserva de verdad
         cuerpo = await _crear_y_completar(
-            pool, espacios, franja, datos.titular_id, identidad, clave
+            pool, espacios, cache, franja, datos.titular_id, identidad, clave
         )
     # Original y repetida salen del mismo cuerpo guardado, así que son idénticas
     response.headers["Location"] = ruta_reserva(cuerpo["id"])
@@ -59,9 +61,9 @@ async def crear_reserva(
 
 
 async def _crear_y_completar(
-    pool, espacios, franja, titular_id, identidad, clave
+    pool, espacios, cache, franja, titular_id, identidad, clave
 ) -> dict:
-    """Crea la reserva guardando su cuerpo en la clave; ante cualquier error borra la clave."""
+    """Crea la reserva guardando su cuerpo en la clave; ante cualquier error borra la clave"""
     guardado: dict = {}
 
     async def completar(conexion, reserva: ReservaGuardada) -> None:
@@ -71,7 +73,7 @@ async def _crear_y_completar(
 
     try:
         await dominio_reservas.crear(
-            pool, espacios, franja, titular_id, identidad, completar
+            pool, espacios, cache, franja, titular_id, identidad, completar
         )
     except Exception:
         await idempotencia.descartar(pool, clave)

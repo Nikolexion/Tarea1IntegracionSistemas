@@ -1,3 +1,5 @@
+"""Salas y disponibilidad: `/v1/salas`. Solo traducen la respuesta de Espacios al contrato REST"""
+
 from datetime import date
 from typing import Annotated
 
@@ -14,8 +16,10 @@ from app.api.esquemas import (
     SalaConDisponibilidad,
 )
 from app.auth.dependencias import identidad_obligatoria
+from app.cache.disponibilidad import Cache
 from app.espacios_gateway.cliente import Espacios
 
+# Cualquier usuario autenticado puede consultar
 router = APIRouter(
     prefix="/v1/salas", tags=["Salas"], dependencies=[Depends(identidad_obligatoria)]
 )
@@ -24,8 +28,16 @@ HoraConsulta = Annotated[str, Query(pattern=PATRON_HORA)]
 
 
 @router.get("", response_model_exclude_none=True)
-async def listar_disponibilidad(fecha: date, espacios: Espacios) -> GrillaDisponibilidad:
-    respuesta = await espacios.listar_disponibilidad(fecha.isoformat())
+async def listar_disponibilidad(
+    fecha: date, espacios: Espacios, cache: Cache
+) -> GrillaDisponibilidad:
+    respuesta, redis_respondio = await cache.obtener(fecha)
+    if respuesta is None:
+        respuesta = await espacios.listar_disponibilidad(fecha.isoformat())
+        # Si Redis no respondió al leer, tampoco se intenta guardar: evita esperar dos veces
+        if redis_respondio:
+            await cache.guardar(fecha, respuesta)
+    # El .proto entrega una lista plana (sala × franja); el contrato la agrupa por sala
     salas: dict[int, SalaConDisponibilidad] = {}
     for item in respuesta.disponibilidades:
         sala, franja = item.sala, item.franja

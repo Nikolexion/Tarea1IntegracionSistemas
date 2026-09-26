@@ -1,3 +1,5 @@
+"""Configuración leída y validada una sola vez desde variables de entorno"""
+
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -11,7 +13,8 @@ class Configuracion:
     jwt_secreto: str
     jwt_minutos_validez: int
     redis_url: str
-    admin_email_inicial: str | None 
+    cache_ttl_segundos: int  # 0 desactiva la caché
+    admin_email_inicial: str | None  # opcionales: sin ellas no se crea el administrador inicial
     admin_password_inicial: str | None
 
 
@@ -22,6 +25,7 @@ class ConfiguracionInvalida(Exception):
 
 
 def cargar_configuracion(entorno: Mapping[str, str] | None = None) -> Configuracion:
+    """Lee `entorno` (por defecto `os.environ`) y reúne todos los errores antes de fallar."""
     entorno = os.environ if entorno is None else entorno
     errores: list[str] = []
 
@@ -40,14 +44,24 @@ def cargar_configuracion(entorno: Mapping[str, str] | None = None) -> Configurac
             errores.append(f"{nombre} debe ser un entero positivo (valor actual: {texto!r})")
             return 0
         return int(texto or 0)
-    
+
+    def entero_no_negativo(nombre: str, por_defecto: int) -> int:
+        texto = opcional(nombre)
+        if texto is None:
+            return por_defecto
+        if not texto.isdigit():
+            errores.append(f"{nombre} debe ser un entero >= 0 (valor actual: {texto!r})")
+            return por_defecto
+        return int(texto)
+
     configuracion = Configuracion(
         reservas_db_url=obligatoria("RESERVAS_DB_URL"),
         espacios_direccion=obligatoria("ESPACIOS_DIRECCION"),
         espacios_deadline_ms=entero_positivo("ESPACIOS_DEADLINE_MS"),
-        jwt_secreto=obligatoria("JWT_SECRET"),
+        jwt_secreto=obligatoria("JWT_SECRETO"),
         jwt_minutos_validez=entero_positivo("JWT_MINUTOS_VALIDEZ"),
         redis_url=obligatoria("REDIS_URL"),
+        cache_ttl_segundos=entero_no_negativo("CACHE_TTL_SEGUNDOS", por_defecto=30),
         admin_email_inicial=opcional("ADMIN_EMAIL_INICIAL"),
         admin_password_inicial=opcional("ADMIN_PASSWORD_INICIAL"),
     )

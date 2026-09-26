@@ -1,4 +1,4 @@
-"""Pruebas contra el PostgreSQL de Reservas (127.0.0.1:5434) y el Espacios real de Docker Compose.
+"""Pruebas contra el PostgreSQL de Reservas (127.0.0.1:5434) y el Espacios real de Docker Compose
 
 No dejan datos: las cuentas de prueba usan un email con PREFIJO_EMAIL_PRUEBA y se borran al
 terminar, junto con sus reservas; `conexion_prueba` revierte su transacción
@@ -27,6 +27,8 @@ os.environ.update({
     "JWT_SECRETO": SECRETO_PRUEBAS,
     "JWT_MINUTOS_VALIDEZ": "60",
     "REDIS_URL": "redis://127.0.0.1:6379/0",
+    # Redis no se expone al host: las pruebas de la caché usan un doble en memoria (test_cache.py)
+    "CACHE_TTL_SEGUNDOS": "0",
 })
 # Sin administrador inicial: arrancar la aplicación en las pruebas no debe escribir en la base
 os.environ.pop("ADMIN_EMAIL_INICIAL", None)
@@ -39,7 +41,7 @@ from app.persistencia.usuarios import crear_usuario  # noqa: E402
 
 
 def pytest_asyncio_loop_factories(config, item):
-    # En Windows, psycopg asíncrono no funciona con el bucle Proactor por defecto.
+    # En Windows, psycopg asíncrono no funciona con el bucle Proactor por defecto
     if sys.platform == "win32":
         return {"selector": asyncio.SelectorEventLoop}
     return {"predeterminado": asyncio.new_event_loop}
@@ -66,7 +68,7 @@ async def conexion_prueba():
 @pytest.fixture
 async def app_iniciada():
     """Aplicación con el pool abierto; al terminar borra las cuentas de prueba, sus reservas y
-    sus claves de idempotencia."""
+    sus claves de idempotencia"""
     app = crear_app()
     async with app.router.lifespan_context(app):
         yield app

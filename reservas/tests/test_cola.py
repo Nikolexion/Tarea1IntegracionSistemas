@@ -1,3 +1,9 @@
+"""Cola de liberaciones, contra la base y el Espacios reales.
+
+Se llama a `procesar_ciclo` directamente para no esperar el intervalo de la tarea. Usa la sala 1 de
+la semilla (2 puestos) en una fecha futura al azar
+"""
+
 import random
 import uuid
 from datetime import date, timedelta
@@ -51,7 +57,9 @@ async def test_un_ciclo_libera_el_puesto_y_borra_la_fila(app_iniciada, liberacio
     referencia, fecha = liberacion_encolada
     assert await _puestos_libres(app_iniciada, fecha) == 1
 
-    await procesar_ciclo(app_iniciada.state.pool, app_iniciada.state.espacios)
+    await procesar_ciclo(
+        app_iniciada.state.pool, app_iniciada.state.espacios, app_iniciada.state.cache
+    )
 
     assert await _fila(app_iniciada, referencia) is None
     assert await _puestos_libres(app_iniciada, fecha) == 2
@@ -65,19 +73,20 @@ async def test_si_espacios_falla_la_fila_queda_y_se_reintenta(
     liberar_real = espacios.liberar_puesto
 
     async def liberar_con_falla(ref):
+        # Solo falla la de esta prueba: otras filas de la cola se procesan normalmente
         if ref == str(referencia):
             raise EspaciosNoDisponible("falla simulada")
         return await liberar_real(ref)
 
     monkeypatch.setattr(espacios, "liberar_puesto", liberar_con_falla)
-    await procesar_ciclo(app_iniciada.state.pool, espacios)
+    await procesar_ciclo(app_iniciada.state.pool, espacios, app_iniciada.state.cache)
 
     intentos, ultimo_error = await _fila(app_iniciada, referencia)
     assert intentos == 1
     assert "falla simulada" in ultimo_error
 
     monkeypatch.undo()
-    await procesar_ciclo(app_iniciada.state.pool, espacios)
+    await procesar_ciclo(app_iniciada.state.pool, espacios, app_iniciada.state.cache)
 
     assert await _fila(app_iniciada, referencia) is None
     assert await _puestos_libres(app_iniciada, fecha) == 2
