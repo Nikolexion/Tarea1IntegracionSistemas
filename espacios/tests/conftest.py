@@ -1,9 +1,8 @@
-"""
-Fixtures contra la base real espacios-db
-"""
+"""Fixtures contra la base real (espacios-db en 127.0.0.1:5433); cada prueba borra lo que crea."""
 
 import asyncio
 import itertools
+
 import grpc
 import pytest
 
@@ -17,6 +16,7 @@ _ids_de_sala = itertools.count(9000)  # ids altos para no chocar con la semilla
 
 
 def pytest_asyncio_loop_factories(config, item):
+    # psycopg asíncrono no funciona con el bucle por defecto de Windows (Proactor).
     return {"selector": asyncio.SelectorEventLoop}
 
 
@@ -37,7 +37,7 @@ async def repositorio(pool):
 
 @pytest.fixture
 async def crear_sala(pool):
-    """Función que crea una sala de prueba con la capacidad dada y devuelve su id"""
+    """Función que crea una sala de prueba con la capacidad dada y devuelve su id."""
     creadas = []
 
     async def borrar(conexion, sala_id: int) -> None:
@@ -63,8 +63,8 @@ async def crear_sala(pool):
 
 @pytest.fixture
 async def cliente_grpc(repositorio):
-    """Stub conectado a un servidor gRPC real levantado en este mismo proceso"""
-    servidor, puerto = crear_servidor(ServicioEspacios(repositorio), "127.0.0.1:0")
+    """Stub conectado a un servidor gRPC real levantado en este mismo proceso."""
+    servidor, puerto = crear_servidor(ServicioEspacios(repositorio, latencia_artificial_ms=0), "127.0.0.1:0")
     await servidor.start()
     async with grpc.aio.insecure_channel(f"127.0.0.1:{puerto}") as canal:
         yield espacios_pb2_grpc.EspaciosStub(canal)

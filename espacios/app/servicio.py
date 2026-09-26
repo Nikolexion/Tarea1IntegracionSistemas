@@ -1,5 +1,6 @@
-"""Las 4 RPC de contratos/espacios.proto"""
+"""Las 4 RPC de contratos/espacios.proto: validan el formato, llaman al repositorio y responden."""
 
+import asyncio
 import re
 from contextlib import asynccontextmanager
 from datetime import date, time
@@ -21,8 +22,9 @@ from app.repositorio import (
 )
 
 
+# --- Errores como códigos de estado gRPC (los resultados normales van en enums, ADR-013) ---
 class FormatoInvalido(Exception):
-    """La petición no respeta el formato del contrato (fecha, hora o referencia)"""
+    """La petición no respeta el formato del contrato (fecha, hora o referencia)."""
 
 
 CODIGO_POR_ERROR = {
@@ -36,7 +38,7 @@ CODIGO_POR_ERROR = {
 
 # --- Lectura de la petición ---
 def _leer(texto: str, patron: str, convertir, nombre: str, esperado: str):
-    # Regex primero: fromisoformat también acepta variantes ("20261001") que el contrato no permite
+    # Regex primero: fromisoformat también acepta variantes ("20261001") que el contrato no permite.
     if not re.fullmatch(patron, texto):
         raise FormatoInvalido(f"{nombre} con formato inválido: {texto!r} (se espera {esperado})")
     try:
@@ -88,20 +90,24 @@ def a_disponibilidad_proto(fila: dict, franja: espacios_pb2.Franja) -> espacios_
 
 # --- Servicio gRPC ---
 class ServicioEspacios(espacios_pb2_grpc.EspaciosServicer):
-    def __init__(self, repositorio: RepositorioEspacios):
+    def __init__(self, repositorio: RepositorioEspacios, latencia_artificial_ms: int):
         self._repositorio = repositorio
+        self._latencia_artificial_s = latencia_artificial_ms / 1000
 
     @asynccontextmanager
     async def _atender(self, context: grpc.aio.ServicerContext):
-        """Traduce las excepciones a códigos de estado gRPC."""
+        """Aplica la latencia artificial y traduce las excepciones a códigos de estado gRPC."""
+        # La latencia va antes de abrir cualquier transacción: no alarga el bloqueo de la sala (ADR-017).
+        if self._latencia_artificial_s > 0:
+            await asyncio.sleep(self._latencia_artificial_s)
         try:
             yield
         except tuple(CODIGO_POR_ERROR) as error:
             await context.abort(CODIGO_POR_ERROR[type(error)], str(error))
-        except LockNotAvailable:  # se superó el lock_timeout: no se ocupó nada
-            await context.abort(grpc.StatusCode.ABORTED, "La sala estuvo bloqueada demasiado tiempo, reintente")
-        except PoolTimeout:  # pool acotado sin conexion libre, no se hizo nada
-            await context.abort(grpc.StatusCode.UNAVAILABLE, "Servicio saturado, reintente más tarde")
+        except LockNotAvailable:  # se superó el lock_timeout: no se ocupó nada (ADR-017)
+            await context.abort(grpc.StatusCode.ABORTED, "La sala estuvo bloqueada demasiado tiempo; reintente")
+        except PoolTimeout:  # pool acotado sin conexión libre: no se hizo nada (ADR-017)
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "Servicio saturado; reintente más tarde")
 
     async def ConsultarDisponibilidad(self, request, context):
         async with self._atender(context):
