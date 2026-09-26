@@ -12,9 +12,11 @@ from app.auth.dependencias import SinToken
 from app.auth.tokens import TokenInvalido
 from app.dominio.errores import (
     CredencialesInvalidas,
+    DatosInvalidos,
     EmailYaRegistrado,
     NoEncontrado,
     SinPermiso,
+    SinPuestos,
 )
 from app.espacios_gateway.cliente import (
     DatosRechazados,
@@ -58,6 +60,11 @@ PROBLEMAS: dict[type[Exception], Problema] = {
     EmailYaRegistrado: Problema(
         409, "email-registrado", "Email ya registrado", "Ya existe una cuenta con ese email."
     ),
+    SinPuestos: Problema(
+        409, "sin-puestos", "Sin puestos disponibles",
+        "La sala no tiene puestos libres en esa franja.",
+    ),
+    DatosInvalidos: Problema(422, "datos-invalidos", "Datos inválidos"),
     DatosRechazados: Problema(422, "datos-invalidos", "Datos inválidos"),  # mensaje de Espacios
     EspaciosNoDisponible: Problema(
         503, "espacios-no-disponible", "Servicio de espacios no disponible",
@@ -102,7 +109,6 @@ def _frase_estandar(status: int) -> str:
         return "Error"
 
 
-
 async def manejar_problema(request: Request, exc: Exception) -> JSONResponse:
     problema = PROBLEMAS[type(exc)]
     return respuesta_problema(
@@ -112,6 +118,7 @@ async def manejar_problema(request: Request, exc: Exception) -> JSONResponse:
 
 
 async def manejar_http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """404 de ruta, 405, etc.: sin significado propio, así que `about:blank`"""
     titulo = _frase_estandar(exc.status_code)
     detalle = exc.detail if exc.detail != titulo else None
     return respuesta_problema(request, exc.status_code, "about:blank", titulo, detalle, exc.headers)

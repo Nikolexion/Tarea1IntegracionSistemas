@@ -31,6 +31,7 @@ servers:
   - name: Autenticación
   - name: Usuarios
   - name: Salas
+  - name: Reservas
 
 security:
   - bearerAuth: []
@@ -226,6 +227,157 @@ paths:
         '504':
           $ref: '#/components/responses/EspaciosSinRespuesta'
 
+  # ------------------------------------------------------------------ Reservas
+
+  /v1/reservas:
+    post:
+      tags: [Reservas]
+      operationId: crearReserva
+      summary: Reservar un puesto
+      description: |
+        Pide a Espacios ocupar un puesto (`OcuparPuesto`) en una sola operación atómica y, si lo
+        logra, registra la reserva.
+
+        - Un usuario solo reserva para sí mismo. Un administrador puede indicar `titular_id` para
+          reservar a nombre de otro usuario.
+        - Con `Idempotency-Key`, reintentar con la misma clave y el mismo cuerpo devuelve la
+          respuesta original sin reservar de nuevo.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservaNueva'
+      responses:
+        '201':
+          description: Reserva creada; el puesto quedó ocupado en Espacios.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reserva'
+        '400':
+          $ref: '#/components/responses/JsonMalFormado'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          description: Un usuario intentó reservar a nombre de otro.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problema'
+        '409':
+          description: |
+            Conflicto. Según `type`:
+            - `/problemas/sin-puestos`: la sala no tiene puestos libres en esa franja.
+            - `/problemas/idempotencia-en-curso`: otra petición con la misma `Idempotency-Key`
+              todavía se está procesando.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problema'
+        '422':
+          description: |
+            Datos inválidos. Incluye: la sala o el titular no existen, la franja no corresponde a
+            un bloque definido, o la `Idempotency-Key` ya se usó con un cuerpo distinto
+            (`/problemas/idempotencia-reutilizada`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problema'
+        '500':
+          description: |
+            Espacios ocupó el puesto pero no se pudo registrar la reserva; el puesto se libera
+            como compensación.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problema'
+        '503':
+          $ref: '#/components/responses/EspaciosNoDisponible'
+        '504':
+          $ref: '#/components/responses/EspaciosSinRespuesta'
+
+    get:
+      tags: [Reservas]
+      operationId: listarReservas
+      summary: Listar reservas
+      description: Un usuario ve solo sus reservas; un administrador ve todas. No consulta a Espacios.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Página de reservas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListaReservas'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '422':
+          $ref: '#/components/responses/ValidacionFallida'
+
+  /v1/reservas/{reserva_id}:
+    get:
+      tags: [Reservas]
+      operationId: obtenerReserva
+      summary: Ver una reserva
+      description: La reserva de otro usuario responde 404. No consulta a Espacios.
+      parameters:
+        - $ref: '#/components/parameters/ReservaId'
+      responses:
+        '200':
+          description: Reserva encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reserva'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+    patch:
+      tags: [Reservas]
+      operationId: cancelarReserva
+      summary: Cancelar una reserva
+      description: |
+        Único cambio admitido: `{"estado": "CANCELADA"}` (JSON Merge Patch, RFC 7396).
+
+        La reserva queda cancelada de inmediato y la liberación del puesto en Espacios se
+        encola; se procesa en segundos, o cuando Espacios vuelva si está caído. Por eso
+        esta operación responde 200 aunque Espacios no esté disponible.
+
+        Es idempotente: cancelar una reserva ya cancelada devuelve 200 con la reserva.
+      parameters:
+        - $ref: '#/components/parameters/ReservaId'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/CancelacionReserva'
+      responses:
+        '200':
+          description: Reserva cancelada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reserva'
+        '400':
+          $ref: '#/components/responses/JsonMalFormado'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '422':
+          $ref: '#/components/responses/ValidacionFallida'
+
 components:
 
   securitySchemes:
@@ -248,6 +400,14 @@ components:
         minimum: 1
     SalaId:
       name: sala_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ReservaId:
+      name: reserva_id
       in: path
       required: true
       schema:
@@ -294,6 +454,17 @@ components:
         type: integer
         minimum: 0
         default: 0
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Clave única elegida por el cliente (se recomienda un UUID) para reintentar sin crear
+        reservas duplicadas. Su alcance es por usuario.
+      schema:
+        type: string
+        maxLength: 255
+        examples: ['8e03978e-40d5-43e8-bc93-6894a57f9324']
 
   # ------------------------------------------------------------------ Headers
 
@@ -600,3 +771,109 @@ components:
             reservar:
               $ref: '#/components/schemas/Enlace'
 
+    # --- Reservas ---
+    EstadoReserva:
+      type: string
+      enum: [ACTIVA, CANCELADA]
+    ReservaNueva:
+      type: object
+      required: [sala_id, fecha, hora_inicio, hora_fin]
+      properties:
+        sala_id:
+          type: integer
+          format: int64
+        fecha:
+          type: string
+          format: date
+        hora_inicio:
+          $ref: '#/components/schemas/Hora'
+        hora_fin:
+          $ref: '#/components/schemas/Hora'
+        titular_id:
+          type: integer
+          format: int64
+          description: |
+            Usuario para quien es la reserva. Solo un administrador puede indicar a otro usuario;
+            si se omite, el titular es quien reserva.
+    Reserva:
+      type: object
+      required:
+        - id
+        - estado
+        - sala_id
+        - sala_nombre
+        - fecha
+        - hora_inicio
+        - hora_fin
+        - titular_id
+        - creada_por_id
+        - creada_en
+        - _links
+      properties:
+        id:
+          type: integer
+          format: int64
+        estado:
+          $ref: '#/components/schemas/EstadoReserva'
+        sala_id:
+          type: integer
+          format: int64
+        sala_nombre:
+          type: string
+          description: Nombre de la sala al momento de reservar (copia intencional).
+        fecha:
+          type: string
+          format: date
+        hora_inicio:
+          $ref: '#/components/schemas/Hora'
+        hora_fin:
+          $ref: '#/components/schemas/Hora'
+        titular_id:
+          type: integer
+          format: int64
+          description: Usuario para quien es la reserva.
+        creada_por_id:
+          type: integer
+          format: int64
+          description: Usuario que realizó la reserva (tomado del token).
+        creada_en:
+          type: string
+          format: date-time
+        cancelada_en:
+          type: [string, 'null']
+          format: date-time
+        _links:
+          type: object
+          required: [self, sala]
+          description: '`cancelar` aparece solo si la reserva está ACTIVA y quien consulta es el titular o un administrador.'
+          properties:
+            self:
+              $ref: '#/components/schemas/Enlace'
+            sala:
+              $ref: '#/components/schemas/Enlace'
+            cancelar:
+              $ref: '#/components/schemas/Enlace'
+    CancelacionReserva:
+      type: object
+      description: JSON Merge Patch (RFC 7396). Solo se admite cancelar.
+      required: [estado]
+      properties:
+        estado:
+          type: string
+          const: CANCELADA
+    ListaReservas:
+      type: object
+      required: [items, total, limit, offset, _links]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reserva'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        _links:
+          $ref: '#/components/schemas/EnlacesPagina'
