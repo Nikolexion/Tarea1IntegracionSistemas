@@ -26,11 +26,12 @@ servers:
   - url: http://localhost:8000
     description: Entorno local levantado con docker compose
 
+
+# Por defecto, todo endpoint exige token. Los públicos lo anulan con `security: []`.tags:
   - name: Autenticación
   - name: Usuarios
+  - name: Salas
 
-
-# Por defecto, todo endpoint exige token. Los públicos lo anulan con `security: []`.
 security:
   - bearerAuth: []
 
@@ -164,6 +165,67 @@ paths:
         '404':
           $ref: '#/components/responses/NoEncontrado'
 
+  # ------------------------------------------------------------------ Salas
+
+  /v1/salas:
+    get:
+      tags: [Salas]
+      operationId: listarDisponibilidad
+      summary: Salas con sus puestos libres en cada franja de una fecha
+      description: |
+        Consulta a Espacios (`ListarDisponibilidad`). El resultado puede venir de la caché
+        mientras esté vigente. Si Espacios no responde y no hay dato vigente, responde 503 o 504.
+      parameters:
+        - $ref: '#/components/parameters/Fecha'
+      responses:
+        '200':
+          description: Grilla de disponibilidad de la fecha.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GrillaDisponibilidad'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '422':
+          $ref: '#/components/responses/ValidacionFallida'
+        '503':
+          $ref: '#/components/responses/EspaciosNoDisponible'
+        '504':
+          $ref: '#/components/responses/EspaciosSinRespuesta'
+
+  /v1/salas/{sala_id}/disponibilidad:
+    get:
+      tags: [Salas]
+      operationId: consultarDisponibilidad
+      summary: Puestos libres de una sala en una franja
+      description: Consulta a Espacios (`ConsultarDisponibilidad`), con caché mientras esté vigente.
+      parameters:
+        - $ref: '#/components/parameters/SalaId'
+        - $ref: '#/components/parameters/Fecha'
+        - $ref: '#/components/parameters/HoraInicio'
+        - $ref: '#/components/parameters/HoraFin'
+      responses:
+        '200':
+          description: Disponibilidad de la sala en la franja.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Disponibilidad'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '422':
+          description: La franja no corresponde a un bloque definido o los parámetros no son válidos.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problema'
+        '503':
+          $ref: '#/components/responses/EspaciosNoDisponible'
+        '504':
+          $ref: '#/components/responses/EspaciosSinRespuesta'
+
 components:
 
   securitySchemes:
@@ -172,6 +234,8 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Token obtenido en `POST /v1/auth/login`. Expira a los 60 minutos.
+
+  # ------------------------------------------------------------------ Parámetros
 
   parameters:
     UsuarioId:
@@ -182,6 +246,35 @@ components:
         type: integer
         format: int64
         minimum: 1
+    SalaId:
+      name: sala_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    Fecha:
+      name: fecha
+      in: query
+      required: true
+      description: Fecha en formato ISO 8601.
+      schema:
+        type: string
+        format: date
+        examples: ['2026-10-01']
+    HoraInicio:
+      name: hora_inicio
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/Hora'
+    HoraFin:
+      name: hora_fin
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/Hora'
     Limit:
       name: limit
       in: query
@@ -202,6 +295,7 @@ components:
         minimum: 0
         default: 0
 
+  # ------------------------------------------------------------------ Headers
 
   headers:
     Location:
@@ -209,6 +303,11 @@ components:
       schema:
         type: string
         examples: ['/v1/reservas/7']
+    RetryAfter:
+      description: Segundos sugeridos antes de reintentar.
+      schema:
+        type: integer
+        examples: [10]
     WwwAuthenticate:
       description: Esquema de autenticación esperado (RFC 6750).
       schema:
@@ -251,10 +350,32 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problema'
+    EspaciosNoDisponible:
+      description: El servicio de Espacios no está disponible. No se realizó ninguna operación.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    EspaciosSinRespuesta:
+      description: |
+        El servicio de Espacios no respondió a tiempo. El resultado es incierto; si era una
+        reserva, se compensa liberando el puesto.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
 
   # Esquemas
 
   schemas:
+    Hora:
+      type: string
+      pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+      description: Hora de reloj en formato HH:MM, 24 horas.
+      examples: ['09:00']
     Problema:
       type: object
       description: Error en formato Problem Details (RFC 9457).
@@ -404,3 +525,78 @@ components:
           type: integer
         _links:
           $ref: '#/components/schemas/EnlacesPagina'
+
+    # Salas y disponibilidad 
+    Sala:
+      type: object
+      required: [id, nombre, capacidad]
+      properties:
+        id:
+          type: integer
+          format: int64
+        nombre:
+          type: string
+        capacidad:
+          type: integer
+          description: Total de puestos de la sala.
+    FranjaDisponible:
+      type: object
+      required: [hora_inicio, hora_fin, puestos_libres, _links]
+      properties:
+        hora_inicio:
+          $ref: '#/components/schemas/Hora'
+        hora_fin:
+          $ref: '#/components/schemas/Hora'
+        puestos_libres:
+          type: integer
+        _links:
+          type: object
+          description: '`reservar` aparece solo si quedan puestos libres.'
+          properties:
+            reservar:
+              $ref: '#/components/schemas/Enlace'
+    SalaConDisponibilidad:
+      allOf:
+        - $ref: '#/components/schemas/Sala'
+        - type: object
+          required: [franjas]
+          properties:
+            franjas:
+              type: array
+              items:
+                $ref: '#/components/schemas/FranjaDisponible'
+    GrillaDisponibilidad:
+      type: object
+      required: [fecha, salas]
+      properties:
+        fecha:
+          type: string
+          format: date
+        salas:
+          type: array
+          items:
+            $ref: '#/components/schemas/SalaConDisponibilidad'
+    Disponibilidad:
+      type: object
+      required: [sala, fecha, hora_inicio, hora_fin, puestos_libres, _links]
+      properties:
+        sala:
+          $ref: '#/components/schemas/Sala'
+        fecha:
+          type: string
+          format: date
+        hora_inicio:
+          $ref: '#/components/schemas/Hora'
+        hora_fin:
+          $ref: '#/components/schemas/Hora'
+        puestos_libres:
+          type: integer
+        _links:
+          type: object
+          required: [self]
+          properties:
+            self:
+              $ref: '#/components/schemas/Enlace'
+            reservar:
+              $ref: '#/components/schemas/Enlace'
+

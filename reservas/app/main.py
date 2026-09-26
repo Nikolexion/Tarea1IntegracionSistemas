@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 from fastapi import FastAPI
 
-from app.api import auth, usuarios
+from app.api import auth, salas, usuarios
 from app.api.errores import registrar_manejadores
 from app.config import cargar_configuracion
 from app.dominio.usuarios import crear_administrador_inicial
@@ -45,7 +45,7 @@ def contrato_openapi() -> dict[str, Any]:
 def crear_app() -> FastAPI:
     app = FastAPI(title="CoLabora API de Reservas", version="1.0.0", lifespan=ciclo_de_vida)
     registrar_manejadores(app)
-    for modulo in (auth, usuarios):
+    for modulo in (auth, usuarios, salas):
         app.include_router(modulo.router)
     app.openapi = contrato_openapi
     return app
