@@ -76,6 +76,7 @@ services:
       JWT_SECRETO: ${JWT_SECRETO}
       JWT_MINUTOS_VALIDEZ: ${JWT_MINUTOS_VALIDEZ}
       REDIS_URL: ${REDIS_URL}
+      CACHE_TTL_SEGUNDOS: ${CACHE_TTL_SEGUNDOS:-30}
       ADMIN_EMAIL_INICIAL: ${ADMIN_EMAIL_INICIAL:-}
       ADMIN_PASSWORD_INICIAL: ${ADMIN_PASSWORD_INICIAL:-}
     ports:
@@ -84,6 +85,27 @@ services:
       # Solo su propia base. No depende de Espacios: Reservas debe arrancar
       # y atender aunque Espacios esté caído.
       reservas-db:
+        condition: service_healthy
+    healthcheck:
+      # Sano cuando la API ya responde (la imagen no trae curl)
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Redis (caché de disponibilidad, sin volumen ni puertos)
+  redis:
+    image: redis:7
+
+  # Frontend (nginx sirve la página y reenvía /v1 a Reservas)
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      # Espera a que la API responda, para no dar 502 al arrancar
+      reservas:
         condition: service_healthy
 
 # Volúmenes nombrados, persistentes
