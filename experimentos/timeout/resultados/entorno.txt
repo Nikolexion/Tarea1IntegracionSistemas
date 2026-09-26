@@ -1,0 +1,7 @@
+Fecha de la medición: 2026-09-25
+Sistema operativo: Windows-11-10.0.26200-SP0
+CPU: Intel64 Family 6 Model 186 Stepping 2, GenuineIntel (12 hilos lógicos)
+Python: 3.12.10
+Docker: Docker version 29.2.1, build a5c7197
+Recursos de Docker: 12 CPU, 8171765760 bytes de RAM, Docker Desktop
+Variables controladas: 3 corridas x 200 peticiones, 10 de calentamiento descartadas por corrida, 10 concurrentes, CACHE_TTL_SEGUNDOS=0
