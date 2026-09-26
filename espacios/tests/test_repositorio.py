@@ -14,7 +14,7 @@ from app.repositorio import (
     ResultadoOcupacion,
     SalaNoEncontrada,
 )
-from tests.datos import FECHA_PASADA, franja, nueva_referencia
+from tests.datos import FECHA_FUTURA, FECHA_PASADA, franja, nueva_referencia
 
 
 @pytest.mark.parametrize("capacidad", [1, 3])
@@ -100,4 +100,18 @@ async def test_franja_que_no_es_un_bloque_es_invalida(repositorio, crear_sala, i
 async def test_sala_inexistente(repositorio):
     with pytest.raises(SalaNoEncontrada):
         await repositorio.ocupar(8_999_999, franja(), nueva_referencia())
+
+
+
+async def test_campos_iniciada_y_sala_nombre(repositorio, crear_sala):
+    sala_id = await crear_sala(2)
+
+    pasada = await repositorio.consultar_disponibilidad(sala_id, franja(FECHA_PASADA))
+    futura = await repositorio.consultar_disponibilidad(sala_id, franja(FECHA_FUTURA))
+    listado = [d for d in await repositorio.listar_disponibilidad(FECHA_PASADA) if d["id"] == sala_id]
+    ocupacion = await repositorio.ocupar(sala_id, franja(), nueva_referencia())
+
+    assert pasada["iniciada"] is True and futura["iniciada"] is False
+    assert len(listado) == 12 and all(d["iniciada"] for d in listado)
+    assert ocupacion.sala_nombre == futura["nombre"] == f"Sala de prueba {sala_id}"
 

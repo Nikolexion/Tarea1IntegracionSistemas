@@ -33,6 +33,7 @@ class ResultadoLiberacion(Enum):
 class Ocupacion:
     resultado: ResultadoOcupacion
     puestos_libres: int
+    sala_nombre: str
 
 
 # --- Errores de negocio ---
@@ -81,13 +82,13 @@ class RepositorioEspacios:
             sala = await _buscar_sala(conexion, sala_id)
             await _validar_bloque(conexion, franja)
             ocupadas = await _contar_ocupadas(conexion, sala_id, franja)
-
-        return {**sala, "puestos_libres": sala["capacidad"] - ocupadas}
+            iniciada = await self._franja_iniciada(conexion, franja)
+        return {**sala, "puestos_libres": sala["capacidad"] - ocupadas, "iniciada": iniciada}
 
     async def listar_disponibilidad(self, fecha:date) -> list[dict]:
         # Cada sala por cada bloque de la fecha, ordenado por sala y hora
         async with self._pool.connection() as conexion:
-            cursor = await conexion.execute(_SQL_LISTAR, (fecha,))
+            cursor = await conexion.execute(_SQL_LISTAR, (fecha, self._zona_horaria, fecha))
             return await cursor.fetchall()
 
     async def ocupar(self, sala_id: int, franja: Franja, referencia: str) -> Ocupacion:
@@ -153,10 +154,10 @@ class RepositorioEspacios:
             raise FranjaIniciada("La franja ya comenzó, no se puede ocupar")
         libres = sala["capacidad"] - await _contar_ocupadas(conexion, sala["id"], franja)
         if libres <= 0:
-            return Ocupacion(ResultadoOcupacion.SIN_PUESTOS, 0)
+            return Ocupacion(ResultadoOcupacion.SIN_PUESTOS, 0, sala["nombre"])
         if not await _insertar_ocupacion(conexion, sala["id"], franja, referencia):
             return None
-        return Ocupacion(ResultadoOcupacion.OCUPADO, libres - 1)
+        return Ocupacion(ResultadoOcupacion.OCUPADO, libres - 1, sala["nombre"])
 
 # Consultas de apoyo
 _SQL_SALA = "SELECT id, nombre, capacidad FROM salas WHERE id = %s"
@@ -166,12 +167,13 @@ _SQL_SALA_BLOQUEANDO = "SELECT id, nombre, capacidad FROM salas WHERE id = %s FO
 # en cero las franjas sin ocupaciones
 _SQL_LISTAR = """
     SELECT s.id, s.nombre, s.capacidad, b.hora_inicio, b.hora_fin,
-        s.capacidad - count(o.referencia) AS puestos_libres
+           s.capacidad - count(o.referencia) AS puestos_libres,
+           (%s::date + b.hora_inicio) <= (now() AT TIME ZONE %s) AS iniciada
     FROM salas s
     CROSS JOIN bloques b
     LEFT JOIN ocupaciones o
-        ON o.sala_id = s.id AND o.fecha = %s
-        AND o.hora_inicio = b.hora_inicio AND o.estado = 'ACTIVA'
+           ON o.sala_id = s.id AND o.fecha = %s
+          AND o.hora_inicio = b.hora_inicio AND o.estado = 'ACTIVA'
     GROUP BY s.id, b.hora_inicio
     ORDER BY s.id, b.hora_inicio
 """
@@ -217,11 +219,11 @@ async def _resolver_referencia_existente(
     libres = sala["capacidad"] - await _contar_ocupadas(conexion, sala["id"], franja)
     if existente["estado"] == "LIBERADA":
         # ocupacion tardia de una referencia ya liberada, se rechaza
-        return Ocupacion(ResultadoOcupacion.REFERENCIA_LIBERADA, libres)
+        return Ocupacion(ResultadoOcupacion.REFERENCIA_LIBERADA, libres, sala["nombre"])
     registrada = (existente["sala_id"], existente["fecha"], existente["hora_inicio"], existente["hora_fin"])
     if registrada != (sala["id"], franja.fecha, franja.hora_inicio, franja.hora_fin):
         raise ReferenciaEnOtraFranja("La referencia ya ocupa un puesto en otra sala o franja")
-    return Ocupacion(ResultadoOcupacion.OCUPADO, libres)
+    return Ocupacion(ResultadoOcupacion.OCUPADO, libres, sala["nombre"])
 
 
 async def _insertar_ocupacion(conexion: AsyncConnection, sala_id: int, franja: Franja, referencia: str) -> bool:

@@ -82,6 +82,7 @@ def a_disponibilidad_proto(fila: dict, franja: espacios_pb2.Franja) -> espacios_
         sala=espacios_pb2.Sala(id=fila["id"], nombre=fila["nombre"], capacidad=fila["capacidad"]),
         franja=franja,
         puestos_libres=fila["puestos_libres"],
+        iniciada=fila["iniciada"],
     )
 
 
@@ -127,6 +128,7 @@ class ServicioEspacios(espacios_pb2_grpc.EspaciosServicer):
         return espacios_pb2.OcuparPuestoResponse(
             resultado=RESULTADO_OCUPACION_PROTO[ocupacion.resultado],
             puestos_libres=ocupacion.puestos_libres,
+            sala_nombre=ocupacion.sala_nombre,
         )
 
     async def LiberarPuesto(self, request, context):
