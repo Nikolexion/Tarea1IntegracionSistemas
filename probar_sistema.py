@@ -35,8 +35,10 @@ def docker_compose(*argumentos: str) -> None:
     subprocess.run(["docker", "compose", *argumentos], check=True, capture_output=True)
 
 
-def puestos_libres(cliente: httpx.Client, hora_inicio: str) -> int:
+def puestos_libres(cliente: httpx.Client, hora_inicio: str) -> int | None:
     respuesta = cliente.get("/v1/salas", params={"fecha": FECHA})
+    if respuesta.status_code == 503:
+        return None  # Espacios recién iniciado: Reservas aún no se reconecta
     respuesta.raise_for_status()
     sala = next(s for s in respuesta.json()["salas"] if s["id"] == SALA_ID)
     return next(f["puestos_libres"] for f in sala["franjas"] if f["hora_inicio"] == hora_inicio)
@@ -48,7 +50,8 @@ def esperar_puestos(cliente: httpx.Client, hora_inicio: str, esperados: int) -> 
     while (libres := puestos_libres(cliente, hora_inicio)) != esperados:
         if time.monotonic() - inicio > 60:
             raise RuntimeError(f"Tras 60 s la franja sigue con {libres} puestos libres")
-        print(f"    ... {libres} puestos libres, esperando a la cola")
+        estado = "Espacios aún no responde" if libres is None else f"{libres} puestos libres"
+        print(f"    ... {estado}, esperando a la cola")
         time.sleep(2)
     print(f"    Franja {hora_inicio}: {libres} puestos libres (tras {time.monotonic() - inicio:.0f} s)")
 
